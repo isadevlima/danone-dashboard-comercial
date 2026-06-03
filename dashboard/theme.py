@@ -20,13 +20,13 @@ html, body, [class*="css"] {
 .hero {
     background: linear-gradient(135deg, #1A2B4A 0%, #2E86AB 100%);
     border-radius: 16px;
-    padding: 1.8rem 2rem;
+    padding: 2rem 2.2rem;
     color: white;
-    margin-bottom: 1.2rem;
+    margin-bottom: 1.5rem;
     box-shadow: 0 8px 32px rgba(26, 43, 74, 0.18);
 }
-.hero h1 { color: white !important; font-size: 1.75rem; margin: 0 0 0.35rem 0; font-weight: 700; line-height: 1.25; }
-.hero p  { color: rgba(255,255,255,0.88); margin: 0; font-size: 0.95rem; line-height: 1.45; }
+.hero h1 { color: white !important; font-size: 1.85rem; margin: 0 0 0.4rem 0; font-weight: 700; line-height: 1.25; }
+.hero p  { color: rgba(255,255,255,0.9); margin: 0; font-size: 1rem; line-height: 1.45; }
 
 .kpi-card {
     background: #FFFFFF;
@@ -39,8 +39,11 @@ html, body, [class*="css"] {
 }
 .kpi-label { font-size: 0.72rem; color: #6C757D; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 .kpi-value { font-size: 1.45rem; font-weight: 700; color: #1A2B4A; margin: 0.35rem 0; line-height: 1.2; }
-.kpi-delta-pos { color: #1B5E20; font-weight: 600; font-size: 0.9rem; }
-.kpi-delta-neg { color: #BF5700; font-weight: 600; font-size: 0.9rem; }
+.kpi-delta-pos { color: #1B5E20; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 0.35rem; }
+.kpi-delta-neg { color: #BF5700; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 0.35rem; }
+.kpi-arrow { font-size: 1.05rem; font-weight: 700; line-height: 1; }
+.kpi-value-up { color: #1B5E20 !important; }
+.kpi-value-down { color: #BF5700 !important; }
 
 .section-title {
     font-size: 1.12rem;
@@ -53,44 +56,81 @@ html, body, [class*="css"] {
     width: 100%;
 }
 
-.chart-wrap {
+/* Gráficos Plotly — caixa branca (sem wrapper HTML extra no Streamlit) */
+.main [data-testid="stPlotlyChart"] {
     background: #FFFFFF;
     border-radius: 14px;
     border: 1px solid #E9ECEF;
-    padding: 0.5rem 0.75rem 0.25rem 0.75rem;
+    padding: 2.25rem 0.75rem 0.5rem 0.75rem;
     box-shadow: 0 2px 14px rgba(26, 43, 74, 0.05);
     margin-bottom: 0.5rem;
 }
 
 .portfolio-card {
     background: #FFFFFF;
-    border-radius: 12px;
+    border-radius: 14px;
     border: 1px solid #E9ECEF;
-    padding: 1rem 1.15rem;
-    margin-bottom: 0.75rem;
-    box-shadow: 0 2px 10px rgba(26, 43, 74, 0.05);
+    padding: 1.15rem 1.25rem;
+    margin-bottom: 0.85rem;
+    box-shadow: 0 4px 16px rgba(26, 43, 74, 0.07);
+}
+.portfolio-card.destaque {
+    border-color: #2E86AB;
+    background: linear-gradient(180deg, #FFFFFF 0%, #F8FBFD 100%);
 }
 .portfolio-name {
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     font-weight: 700;
     color: #1A2B4A;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 .portfolio-val {
-    font-size: 1.25rem;
+    font-size: 1.35rem;
     font-weight: 700;
     color: #2E86AB;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.55rem;
+}
+.portfolio-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.15rem;
 }
 .portfolio-badge {
-    display: inline-block;
-    padding: 0.2rem 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.28rem 0.7rem;
     border-radius: 999px;
     font-size: 0.82rem;
     font-weight: 600;
 }
 .portfolio-badge.pos { background: #E8F5E9; color: #1B5E20; }
 .portfolio-badge.neg { background: #FFF3E0; color: #BF5700; }
+.portfolio-ms {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #E8F0F8;
+    color: #1A2B4A;
+    border: 1px solid #C5D9E8;
+}
+.portfolio-concorrente {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #F1F3F5;
+    color: #495057;
+    border: 1px solid #DEE2E6;
+}
 
 .insight-box {
     background: #F8F9FA;
@@ -191,6 +231,22 @@ button[kind="header"] {
     border-bottom: 1px solid rgba(255,255,255,0.12);
     margin-bottom: 1rem;
 }
+.sidebar-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.sidebar-brand-row img {
+    height: 40px;
+    width: auto;
+    max-width: 92px;
+    object-fit: contain;
+    flex-shrink: 0;
+    display: block;
+}
+.sidebar-brand-text {
+    min-width: 0;
+}
 .sidebar-brand-title {
     font-size: 1.05rem;
     font-weight: 700;
@@ -199,32 +255,72 @@ button[kind="header"] {
 }
 .sidebar-brand-sub {
     font-size: 0.78rem;
-    color: rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.82);
     margin-top: 0.25rem;
 }
 .sidebar-nav-label {
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.45);
+    color: rgba(255,255,255,0.72);
     font-weight: 600;
     margin-bottom: 0.6rem;
 }
 .sidebar-footer {
     font-size: 0.72rem;
-    color: rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.65);
     margin-top: 2rem;
     padding-top: 1rem;
     border-top: 1px solid rgba(255,255,255,0.1);
     line-height: 1.4;
 }
 
-/* Gráficos Plotly — fundo sempre claro */
-[data-testid="stPlotlyChart"] {
-    background: transparent;
+
+/* ── Área principal: textos sempre legíveis (evita branco em fundo claro) ── */
+.main label,
+.main .stMarkdown,
+.main .stMarkdown p,
+.main [data-testid="stWidgetLabel"],
+.main .stCaption,
+.main h3,
+.main h4 {
+    color: #1A2B4A !important;
+}
+.main .stSlider label,
+.main .stMultiSelect label,
+.main .stTextInput label {
+    color: #334155 !important;
+    font-weight: 600 !important;
+}
+.main div[data-baseweb="select"] > div,
+.main input {
+    color: #1A2B4A !important;
+    background-color: #FFFFFF !important;
+}
+.main .stAlert p,
+.main [data-testid="stNotification"] {
+    color: inherit !important;
+}
+.url-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 8px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    color: #FFFFFF !important;
+    margin-top: 0.5rem;
+    font-family: Consolas, 'Segoe UI', monospace;
+}
+.url-badge a {
+    color: #B8E6F5 !important;
+    text-decoration: none;
+    font-weight: 600;
 }
 </style>
 """
+
+FUNDO_PAGINA = "#F0F4F8"
 
 CORES = {
     "navy": "#1A2B4A",
@@ -243,9 +339,26 @@ PALETA_REGIAO = ["#1A2B4A", "#2E86AB", "#4ECDC4", "#45B7D1", "#96CEB4"]
 PLOTLY_CONFIG = {
     "displayModeBar": True,
     "displaylogo": False,
-    "modeBarButtonsToRemove": ["lasso2d", "select2d", "autoScale2d"],
+    "modeBarButtonsToRemove": [
+        "lasso2d",
+        "select2d",
+        "autoScale2d",
+        "zoomIn2d",
+        "zoomOut2d",
+        "resetScale2d",
+    ],
     "toImageButtonOptions": {"format": "png", "scale": 2},
 }
+
+# Estilos inline (funcionam com st.html — não dependem de classes CSS externas)
+BOX_CARD = (
+    "background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;"
+    "box-shadow:0 4px 18px rgba(26,43,74,0.08);"
+)
+BOX_PANEL = (
+    "background:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;"
+    "box-shadow:0 6px 24px rgba(26,43,74,0.07);padding:1.1rem 1.25rem;"
+)
 
 
 def aplicar_layout(
@@ -256,7 +369,7 @@ def aplicar_layout(
     legenda: bool = True,
     margem_esq: int = 20,
     margem_dir: int = 24,
-    margem_topo: int = 48,
+        margem_topo: int = 56,
     margem_base: int = 72,
 ) -> go.Figure:
     """Layout padronizado — evita título/legenda sobrepostos."""
@@ -303,10 +416,10 @@ def aplicar_layout(
             y=-0.22,
             xanchor="center",
             x=0.5,
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="#E9ECEF",
+            bgcolor="rgba(255,255,255,0.95)",
+            bordercolor="#CBD5E1",
             borderwidth=1,
-            font=dict(size=11),
+            font=dict(size=12, color="#1A2B4A"),
         )
         layout["margin"]["b"] = max(margem_base, 88)
     else:

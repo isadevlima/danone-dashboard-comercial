@@ -17,6 +17,10 @@ textColor = "#FFFFFF"
 headless = true
 enableCORS = false
 enableXsrfProtection = true
+# URL amigável no PC: http://localhost:8501 (evita IP 192.168.x.x)
+address = "localhost"
 
 [browser]
 gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501

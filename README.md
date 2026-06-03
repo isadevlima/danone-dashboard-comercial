@@ -26,7 +26,7 @@ CURSOR-APRESENTACAO/
 ├── requirements.txt
 │
 ├── dados/                        ← planilha oficial (não alterar pelos scripts)
-│   └── ESTUDO_DANONE_MAT_MAIO.xlsx
+│   └── ESTUDO_DANONE_MAT_MAIO1.xlsx   ← planilha atual
 │
 ├── danone/                       ← pacote central (leitura + formatação)
 │   ├── config.py
@@ -75,7 +75,7 @@ cd "C:\Users\Monaliza.Lima\OneDrive\Documentos\CURSOR-APRESENTACAO"
 pip install -r requirements.txt
 ```
 
-Confirme que existe: `dados\ESTUDO_DANONE_MAT_MAIO.xlsx`
+Confirme que existe: `dados\ESTUDO_DANONE_MAT_MAIO1.xlsx`
 
 ---
 
@@ -89,7 +89,7 @@ Confirme que existe: `dados\ESTUDO_DANONE_MAT_MAIO.xlsx`
 streamlit run streamlit_app.py
 ```
 
-URL: **http://localhost:8501**
+URL: **http://localhost:8501** (não use `192.168.x.x` — mais limpo no navegador)
 
 ### Publicar na internet
 

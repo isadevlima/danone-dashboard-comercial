@@ -8,10 +8,17 @@ from danone.config import (
     PASTA_SAIDAS,
     PERIODO_LABEL,
     PLANILHA_FONTE,
+    resolver_planilha,
 )
 from danone.formatters import fmt_moeda, fmt_ms, fmt_numero, fmt_pct, fmt_produto_curto
-from danone.models import DadosApresentacao, EstudoDanone, LinhaFaturamento
-from danone.reader import carregar_dados, carregar_estudo
+from danone.models import CardPanoramaVisao, DadosApresentacao, EstudoDanone, LinhaFaturamento
+from danone.reader import (
+    carregar_dados,
+    carregar_estudo,
+    ler_market_share_portfolio,
+    cards_panorama_visao_geral,
+    linhas_panorama_visao_geral,
+)
 
 __all__ = [
     "BASE_DIR",
@@ -21,11 +28,16 @@ __all__ = [
     "PASTA_SAIDAS",
     "PERIODO_LABEL",
     "PLANILHA_FONTE",
+    "resolver_planilha",
     "DadosApresentacao",
     "EstudoDanone",
+    "CardPanoramaVisao",
     "LinhaFaturamento",
+    "cards_panorama_visao_geral",
     "carregar_dados",
     "carregar_estudo",
+    "ler_market_share_portfolio",
+    "linhas_panorama_visao_geral",
     "fmt_moeda",
     "fmt_ms",
     "fmt_numero",

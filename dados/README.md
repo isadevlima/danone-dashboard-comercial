@@ -1,9 +1,12 @@
 # Dados (fonte da verdade)
 
-Coloque aqui a planilha oficial:
+Coloque aqui a planilha oficial (a mais recente):
 
-- **`ESTUDO_DANONE_MAT_MAIO.xlsx`** — obrigatória para dashboard, relatórios e apresentação
+- **`ESTUDO_DANONE_MAT_MAIO1.xlsx`** — versão atual (MAT MAIO)
+- `ESTUDO_DANONE_MAT_MAIO.xlsx` — versão anterior (fallback automático)
 
-Os scripts **apenas leem** este arquivo; nunca o alteram.
+O sistema usa **o primeiro arquivo que existir** nesta lista.
 
-Arquivos auxiliares (CSV de restauração, cópias antigas) também ficam nesta pasta, mas cópias `*Copia*` não são enviadas ao GitHub.
+Os scripts **apenas leem** — nunca alteram o Excel.
+
+Cópias antigas (`*Copia*`) não são enviadas ao GitHub.

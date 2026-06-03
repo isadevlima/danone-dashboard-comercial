@@ -4,7 +4,28 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PASTA_DADOS = BASE_DIR / "dados"
-PLANILHA_FONTE = PASTA_DADOS / "ESTUDO_DANONE_MAT_MAIO.xlsx"
+
+# Ordem de busca — usa o primeiro arquivo que existir em dados/
+PLANILHA_CANDIDATOS = (
+    "ESTUDO_DANONE_MAT_MAIO1.xlsx",
+    "ESTUDO_DANONE_MAT_MAIO01.xlsx",
+    "ESTUDO_DANONE_MAT_MAIO.xlsx",
+)
+
+
+def resolver_planilha() -> Path:
+    """Retorna a planilha em dados/ (primeiro candidato que existir)."""
+    if PASTA_DADOS.exists():
+        for nome in PLANILHA_CANDIDATOS:
+            caminho = PASTA_DADOS / nome
+            if caminho.exists():
+                return caminho.resolve()
+        for arq in sorted(PASTA_DADOS.glob("ESTUDO_DANONE*.xlsx")):
+            return arq.resolve()
+    return (PASTA_DADOS / PLANILHA_CANDIDATOS[0]).resolve()
+
+
+PLANILHA_FONTE = resolver_planilha()
 PASTA_SAIDAS = BASE_DIR / "saidas"
 PASTA_APRESENTACOES = PASTA_SAIDAS / "apresentacoes"
 PASTA_RELATORIOS = PASTA_SAIDAS / "relatorios"

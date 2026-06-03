@@ -8,6 +8,20 @@ import pandas as pd
 
 
 @dataclass(frozen=True)
+class CardPanoramaVisao:
+    """Card da Visão Geral — sempre centrado na Danone."""
+
+    titulo: str
+    subtitulo: str
+    ms_rotulo: str
+    fat_2025: float
+    fat_2026: float
+    crescimento: float | None = None
+    market_share: float | None = None
+    destaque: bool = False
+
+
+@dataclass(frozen=True)
 class LinhaFaturamento:
     nome: str
     fat_2025: float
