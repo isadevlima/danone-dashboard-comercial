@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Saídas geradas localmente
+saidas_automacao/*.xlsx
+*.pptx
+APRESENTACAO_GERADA.txt
+
+# Segredos locais (nunca subir senha real)
+.streamlit/secrets.toml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Planilhas antigas (opcional — manter só a fonte atual no repo)
+MAIO 2026 - Copia.xlsx
