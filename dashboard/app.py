@@ -15,12 +15,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from danone import PLANILHA_FONTE, carregar_estudo, fmt_moeda, fmt_pct, fmt_produto_curto
-from dashboard.theme import CORES, CSS, PALETA_REGIAO
+from dashboard.theme import CORES, CSS, PALETA_REGIAO, PLOTLY_CONFIG, aplicar_layout
 
 st.set_page_config(
     page_title="Danone NTR — Dashboard Comercial",
@@ -80,72 +79,128 @@ def _kpi_card(label: str, value: str, delta: str, positivo: bool = True) -> str:
     """
 
 
+def _portfolio_card(nome: str, valor: str, cresc: str, positivo: bool) -> str:
+    badge_cls = "pos" if positivo else "neg"
+    return f"""
+    <div class="portfolio-card">
+        <div class="portfolio-name">{nome}</div>
+        <div class="portfolio-val">{valor}</div>
+        <span class="portfolio-badge {badge_cls}">{cresc}</span>
+    </div>
+    """
+
+
 def _bar_comparativo(
     df: pd.DataFrame,
     nome_col: str,
     titulo: str,
     horizontal: bool = False,
 ) -> go.Figure:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="Abr/25",
-        x=df[nome_col] if not horizontal else df["fat_2025"],
-        y=df["fat_2025"] if not horizontal else df[nome_col],
-        orientation="h" if horizontal else "v",
-        marker_color=CORES["gray"],
-    ))
-    fig.add_trace(go.Bar(
-        name="Abr/26",
-        x=df[nome_col] if not horizontal else df["fat_2026"],
-        y=df["fat_2026"] if not horizontal else df[nome_col],
-        orientation="h" if horizontal else "v",
-        marker_color=CORES["navy"],
-    ))
-    fig.update_layout(
-        title=titulo,
-        barmode="group",
-        template="plotly_white",
-        height=380 if not horizontal else max(320, len(df) * 38),
-        margin=dict(l=20, r=20, t=50, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
-        font=dict(family="Inter, Segoe UI"),
-    )
+    n = len(df)
     if horizontal:
-        fig.update_xaxes(tickformat=".2s", ticksuffix="")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            name="Abr/25",
+            y=df[nome_col],
+            x=df["fat_2025"],
+            orientation="h",
+            marker=dict(color=CORES["bar_2025"], cornerradius=4),
+            text=[f"R$ {v/1e6:.1f}M" if v >= 1e6 else f"R$ {v/1e3:.0f}K" for v in df["fat_2025"]],
+            textposition="outside",
+            textfont=dict(size=10, color="#64748B"),
+            cliponaxis=False,
+        ))
+        fig.add_trace(go.Bar(
+            name="Abr/26",
+            y=df[nome_col],
+            x=df["fat_2026"],
+            orientation="h",
+            marker=dict(color=CORES["bar_2026"], cornerradius=4),
+            text=[f"R$ {v/1e6:.1f}M" if v >= 1e6 else f"R$ {v/1e3:.0f}K" for v in df["fat_2026"]],
+            textposition="outside",
+            textfont=dict(size=10, color="#1A2B4A"),
+            cliponaxis=False,
+        ))
+        altura = max(340, n * 52 + 100)
+        aplicar_layout(fig, altura=altura, titulo=titulo, margem_esq=120, margem_dir=80, margem_base=90)
+        fig.update_xaxes(tickformat=".2s", showgrid=True, gridcolor="#EEF2F6")
+        fig.update_yaxes(tickfont=dict(size=11))
     else:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            name="Abr/25",
+            x=df[nome_col],
+            y=df["fat_2025"],
+            marker=dict(color=CORES["bar_2025"], cornerradius=6),
+            width=0.35,
+        ))
+        fig.add_trace(go.Bar(
+            name="Abr/26",
+            x=df[nome_col],
+            y=df["fat_2026"],
+            marker=dict(color=CORES["bar_2026"], cornerradius=6),
+            width=0.35,
+        ))
+        altura = max(400, 320)
+        aplicar_layout(fig, altura=altura, titulo=titulo, margem_base=95)
         fig.update_yaxes(tickformat=".2s")
+        fig.update_xaxes(tickangle=0, tickfont=dict(size=11))
+
     return fig
 
 
-def _grafico_crescimento(df: pd.DataFrame, nome_col: str, titulo: str) -> go.Figure:
+def _grafico_crescimento_horizontal(
+    df: pd.DataFrame,
+    nome_col: str,
+    titulo: str,
+) -> go.Figure:
     df = df.copy()
     df["cresc_pct"] = df["crescimento"] * 100
     df["cor"] = df["cresc_pct"].apply(lambda v: CORES["green"] if v >= 0 else CORES["orange"])
-    fig = px.bar(
-        df,
-        x="cresc_pct" if not nome_col == "nome" else nome_col,
-        y=nome_col if nome_col != "nome" else "cresc_pct",
-        orientation="h" if nome_col != "nome" else "v",
-        title=titulo,
-        color="cor",
-        color_discrete_map="identity",
+
+    fig = go.Figure(go.Bar(
+        x=df["cresc_pct"],
+        y=df[nome_col],
+        orientation="h",
+        marker=dict(color=df["cor"], cornerradius=4),
+        text=[f"{v:+.1f}%".replace(".", ",") for v in df["cresc_pct"]],
+        textposition="outside",
+        textfont=dict(size=10, color="#475569"),
+        cliponaxis=False,
+    ))
+    aplicar_layout(
+        fig,
+        altura=max(360, len(df) * 48 + 100),
+        titulo=titulo,
+        legenda=False,
+        margem_esq=100,
+        margem_dir=60,
+        margem_base=50,
     )
-    fig.update_layout(
-        template="plotly_white",
-        showlegend=False,
-        height=max(300, len(df) * 36),
-        margin=dict(l=10, r=10, t=50, b=10),
-        font=dict(family="Inter, Segoe UI"),
-    )
-    fig.update_xaxes(title="Crescimento YoY (%)")
+    fig.update_xaxes(title="Crescimento YoY (%)", zeroline=True, zerolinecolor="#CBD5E1")
+    fig.add_vline(x=0, line_width=1, line_color="#CBD5E1")
     return fig
+
+
+def _plot(fig: go.Figure) -> None:
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 def main() -> None:
     if not _verificar_acesso():
         return
 
-    st.sidebar.markdown("### 🎯 Navegação")
+    st.sidebar.markdown("""
+    <div class="sidebar-brand">
+        <div class="sidebar-brand-title">Danone NTR</div>
+        <div class="sidebar-brand-sub">Dashboard Comercial · MAT MAIO</div>
+    </div>
+    <div class="sidebar-nav-label">Navegação</div>
+    """, unsafe_allow_html=True)
+
     pagina = st.sidebar.radio(
         "Seção",
         [
@@ -160,8 +215,17 @@ def main() -> None:
         label_visibility="collapsed",
     )
 
-    planilha = st.sidebar.text_input("Planilha (read-only)", str(PLANILHA_FONTE))
-    path = Path(planilha)
+    path = PLANILHA_FONTE
+    with st.sidebar.expander("Fonte de dados", expanded=False):
+        planilha_input = st.text_input("Planilha (read-only)", str(PLANILHA_FONTE), label_visibility="collapsed")
+        if planilha_input.strip():
+            path = Path(planilha_input.strip())
+
+    st.sidebar.markdown(
+        f'<div class="sidebar-footer">Base: {path.name}<br>Leitura automática · Excel intacto</div>',
+        unsafe_allow_html=True,
+    )
+
     if not path.exists():
         st.error(f"Planilha não encontrada: {path}")
         st.stop()
@@ -200,14 +264,18 @@ def main() -> None:
                 "fat_2026": p.fat_2026,
                 "crescimento": p.crescimento,
             } for p in estudo.portfolio])
-            col_g, col_t = st.columns([3, 2])
+            col_g, col_t = st.columns([1.65, 1])
             with col_g:
-                st.plotly_chart(_bar_comparativo(df_p, "Unidade", "Faturamento por unidade de negócio"), use_container_width=True)
+                _plot(_bar_comparativo(df_p, "Unidade", "Faturamento por unidade de negócio"))
             with col_t:
+                st.markdown("<br>", unsafe_allow_html=True)
                 for p in estudo.portfolio:
-                    emoji = "🟢" if (p.crescimento or 0) >= 0 else "🟠"
-                    st.markdown(f"**{emoji} {p.nome.replace('DANONE ', '')}**  \n"
-                                f"{fmt_moeda(p.fat_2026, True)} · {fmt_pct(p.crescimento)}")
+                    nome = p.nome.replace("DANONE ", "")
+                    pos = (p.crescimento or 0) >= 0
+                    st.markdown(
+                        _portfolio_card(nome, fmt_moeda(p.fat_2026, True), fmt_pct(p.crescimento), pos),
+                        unsafe_allow_html=True,
+                    )
 
         st.markdown('<div class="section-title">Top 3 Laboratórios (mercado)</div>', unsafe_allow_html=True)
         if estudo.laboratorios_top3:
@@ -218,7 +286,7 @@ def main() -> None:
                 "crescimento": l.crescimento,
                 "market_share": l.market_share,
             } for l in estudo.laboratorios_top3])
-            st.plotly_chart(_bar_comparativo(df_t3, "Laboratório", "Comparativo Top 3 — faturamento"), use_container_width=True)
+            _plot(_bar_comparativo(df_t3, "Laboratório", "Comparativo Top 3 — faturamento"))
             for l in estudo.laboratorios_top3:
                 ms = f" · MS {fmt_pct(l.market_share, False)}" if l.market_share else ""
                 st.markdown(f'<div class="insight-box">{l.nome}: {fmt_moeda(l.fat_2026, True)} · {fmt_pct(l.crescimento)}{ms}</div>', unsafe_allow_html=True)
@@ -236,19 +304,10 @@ def main() -> None:
             } for r in estudo.regioes])
             c1, c2 = st.columns(2)
             with c1:
-                st.plotly_chart(_bar_comparativo(df_r, "Região", "Faturamento por região"), use_container_width=True)
+                _plot(_bar_comparativo(df_r, "Região", "Faturamento por região"))
             with c2:
                 df_r2 = df_r.sort_values("crescimento", ascending=True)
-                fig = px.bar(
-                    df_r2, x="crescimento", y="Região", orientation="h",
-                    title="Crescimento YoY por região",
-                    color="crescimento",
-                    color_continuous_scale=["#BF5700", "#F8F9FA", "#1B5E20"],
-                    color_continuous_midpoint=0,
-                )
-                fig.update_layout(template="plotly_white", height=380, showlegend=False)
-                fig.update_xaxes(tickformat=".1%", title="YoY")
-                st.plotly_chart(fig, use_container_width=True)
+                _plot(_grafico_crescimento_horizontal(df_r2, "Região", "Crescimento YoY por região"))
 
             lider = max(estudo.regioes, key=lambda x: x.crescimento or -999)
             maior = max(estudo.regioes, key=lambda x: x.fat_2026)
@@ -285,16 +344,25 @@ def main() -> None:
         top_cresc = prod[prod["fat_2026"] > 1_000_000].nlargest(5, "crescimento")
         pior_cresc = prod[prod["fat_2025"] > 1_000_000].nsmallest(5, "crescimento")
 
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns([1.6, 1])
         with c1:
-            fig = px.bar(
-                top_fat.sort_values("fat_2026"),
-                x="fat_2026", y="nome_curto", orientation="h",
-                title=f"Top {top_n} produtos — faturamento Abr/26",
-                color_discrete_sequence=[CORES["navy"]],
+            top_fat_ord = top_fat.sort_values("fat_2026")
+            fig = go.Figure(go.Bar(
+                x=top_fat_ord["fat_2026"],
+                y=top_fat_ord["nome_curto"],
+                orientation="h",
+                marker=dict(color=CORES["bar_2026"], cornerradius=4),
+            ))
+            aplicar_layout(
+                fig,
+                altura=max(420, top_n * 38 + 120),
+                titulo=f"Top {top_n} produtos — faturamento Abr/26",
+                legenda=False,
+                margem_esq=160,
+                margem_dir=40,
             )
-            fig.update_layout(template="plotly_white", height=420, xaxis_tickformat=".2s")
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_xaxes(tickformat=".2s")
+            _plot(fig)
         with c2:
             st.markdown("**🚀 Maiores crescimentos** (fat > R$ 1 mi)")
             for _, r in top_cresc.iterrows():
@@ -315,9 +383,13 @@ def main() -> None:
                 "crescimento": b.crescimento,
                 "market_share": b.market_share,
             } for b in top_b])
-            st.plotly_chart(
-                _bar_comparativo(df_b.sort_values("fat_2026"), "Bandeira", "Top bandeiras — faturamento Danone", horizontal=True),
-                use_container_width=True,
+            _plot(
+                _bar_comparativo(
+                    df_b.sort_values("fat_2026"),
+                    "Bandeira",
+                    "Top bandeiras — faturamento Danone",
+                    horizontal=True,
+                )
             )
             lider = top_b[0]
             st.markdown(
@@ -337,16 +409,32 @@ def main() -> None:
                 "crescimento": l.crescimento,
                 "market_share": l.market_share,
             } for l in estudo.laboratorios_ranking[:15]])
-            fig = px.bar(
-                df_c.sort_values("fat_2026"),
-                x="fat_2026", y="Laboratório", orientation="h",
-                title="Top 15 laboratórios — faturamento Abr/26",
-                color="crescimento",
-                color_continuous_scale=["#BF5700", "#F8F9FA", "#1B5E20"],
-                color_continuous_midpoint=0,
+            df_c = df_c.sort_values("fat_2026")
+            fig = go.Figure(go.Bar(
+                x=df_c["fat_2026"],
+                y=df_c["Laboratório"],
+                orientation="h",
+                marker=dict(
+                    color=df_c["crescimento"],
+                    colorscale=[[0, CORES["orange"]], [0.5, "#E2E8F0"], [1, CORES["green"]]],
+                    cmin=df_c["crescimento"].min(),
+                    cmax=df_c["crescimento"].max(),
+                    cornerradius=4,
+                ),
+                text=[fmt_pct(c) for c in df_c["crescimento"]],
+                textposition="outside",
+                textfont=dict(size=10, color="#475569"),
+            ))
+            aplicar_layout(
+                fig,
+                altura=max(520, len(df_c) * 34 + 100),
+                titulo="Top 15 laboratórios — faturamento Abr/26",
+                legenda=False,
+                margem_esq=140,
+                margem_dir=70,
             )
-            fig.update_layout(template="plotly_white", height=520, xaxis_tickformat=".2s")
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_xaxes(tickformat=".2s")
+            _plot(fig)
 
         if estudo.concorrentes:
             st.markdown("**Ambiente concorrente (aba CONCORRENTE)**")

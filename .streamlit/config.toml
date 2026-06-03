@@ -1,9 +1,17 @@
 [theme]
+base = "light"
 primaryColor = "#2E86AB"
-backgroundColor = "#F8F9FA"
+backgroundColor = "#F0F4F8"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1A2B4A"
 font = "sans serif"
+
+[theme.sidebar]
+widgetBackgroundColor = "#243B55"
+widgetBorderColor = "#2E86AB"
+backgroundColor = "#1A2B4A"
+secondaryBackgroundColor = "#1e3352"
+textColor = "#FFFFFF"
 
 [server]
 headless = true

@@ -13,9 +13,10 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-BASE_DIR = Path(__file__).resolve().parent
-CSV_ORIGEM = BASE_DIR / "ESTUDO DANONE-01.csv"
-XLSX_SAIDA = BASE_DIR / "ESTUDO DANONE-01.xlsx"
+from danone.config import PASTA_DADOS
+
+CSV_ORIGEM = PASTA_DADOS / "ESTUDO DANONE-01.csv"
+XLSX_SAIDA = PASTA_DADOS / "ESTUDO DANONE-01.xlsx"
 
 FMT_MOEDA = '"R$" #.##0,00'
 FMT_PCT = "0,00%"

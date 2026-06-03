@@ -6,12 +6,21 @@ __pycache__/
 venv/
 env/
 
-# Saídas geradas localmente
-saidas_automacao/*.xlsx
+# Saídas geradas (não versionar artefatos)
+saidas/apresentacoes/*
+saidas/relatorios/*
+!saidas/apresentacoes/.gitkeep
+!saidas/relatorios/.gitkeep
+
+# PPTX soltos na raiz (legado / arquivo aberto)
 *.pptx
 APRESENTACAO_GERADA.txt
 
-# Segredos locais (nunca subir senha real)
+# Cópias antigas de planilha (não subir ao GitHub)
+dados/MAIO 2026 - Copia.xlsx
+dados/*Copia*.xlsx
+
+# Segredos locais
 .streamlit/secrets.toml
 
 # IDE / OS
@@ -20,6 +29,3 @@ APRESENTACAO_GERADA.txt
 .DS_Store
 Thumbs.db
 *.tmp
-
-# Planilhas antigas (opcional — manter só a fonte atual no repo)
-MAIO 2026 - Copia.xlsx

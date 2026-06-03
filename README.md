@@ -1,6 +1,6 @@
-# CURSOR-APRESENTACAO — Estudo Danone + Dashboard Comercial
+# Danone NTR — Dashboard Comercial + Automações
 
-Projeto para **ler** a planilha `ESTUDO_DANONE_MAT_MAIO.xlsx` (read-only) e gerar:
+Projeto para **ler** a planilha `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (read-only) e gerar:
 
 - **Dashboard interativo** (Streamlit) — visão comercial
 - **Apresentação executiva** (PowerPoint)
@@ -10,7 +10,7 @@ Projeto para **ler** a planilha `ESTUDO_DANONE_MAT_MAIO.xlsx` (read-only) e gera
 
 ## Regra principal
 
-> **`ESTUDO_DANONE_MAT_MAIO.xlsx` é sempre a fonte da verdade.**
+> **`dados/ESTUDO_DANONE_MAT_MAIO.xlsx` é sempre a fonte da verdade.**
 > Os scripts **apenas leem** — nunca alteram o Excel.
 
 ---
@@ -19,20 +19,52 @@ Projeto para **ler** a planilha `ESTUDO_DANONE_MAT_MAIO.xlsx` (read-only) e gera
 
 ```
 CURSOR-APRESENTACAO/
-├── ESTUDO_DANONE_MAT_MAIO.xlsx     ← BASE (não alterar pelos scripts)
-├── danone/                          ← pacote central (leitura + formatação)
+├── streamlit_app.py              ← entrada do Streamlit Cloud
+├── iniciar_dashboard.bat         ← abrir dashboard (duplo clique)
+├── gerar_apresentacao.bat        ← gerar PowerPoint
+├── gerar_relatorios.bat          ← gerar Excel diretoria/cliente
+├── requirements.txt
+│
+├── dados/                        ← planilha oficial (não alterar pelos scripts)
+│   └── ESTUDO_DANONE_MAT_MAIO.xlsx
+│
+├── danone/                       ← pacote central (leitura + formatação)
 │   ├── config.py
+│   ├── reader.py
 │   ├── models.py
-│   ├── formatters.py
-│   └── reader.py
-├── dashboard/
-│   ├── app.py                       ← Dashboard comercial (Streamlit)
+│   └── formatters.py
+│
+├── dashboard/                    ← interface Streamlit
+│   ├── app.py
 │   └── theme.py
-├── gerar_apresentacao_diretoria.py
-├── gerar_relatorios_laboratorios.py
-├── ler_planilha_maio2026.py         ← compatibilidade legada
-└── saidas_automacao/
+│
+├── scripts/                      ← automações executáveis
+│   ├── gerar_apresentacao_diretoria.py
+│   ├── gerar_relatorios_laboratorios.py
+│   ├── ler_planilha_maio2026.py
+│   └── restaurar_estudo_danone_original.py
+│
+├── saidas/                       ← artefatos gerados (git ignora conteúdo)
+│   ├── apresentacoes/            ← .pptx
+│   └── relatorios/               ← .xlsx
+│
+├── docs/                         ← guias de deploy e uso
+│   ├── COMO_RODAR_EM_QUALQUER_LUGAR.md
+│   └── DEPLOY_STREAMLIT.md
+│
+└── .streamlit/                   ← tema e secrets (exemplo)
 ```
+
+---
+
+## Rodar em qualquer lugar
+
+Guia passo a passo: **[docs/COMO_RODAR_EM_QUALQUER_LUGAR.md](docs/COMO_RODAR_EM_QUALQUER_LUGAR.md)**
+
+| Objetivo | O que fazer |
+|----------|-------------|
+| **Link para o time** | GitHub + Streamlit Cloud → [docs/DEPLOY_STREAMLIT.md](docs/DEPLOY_STREAMLIT.md) |
+| **Outro PC seu** | Copiar pasta + `iniciar_dashboard.bat` |
 
 ---
 
@@ -43,34 +75,60 @@ cd "C:\Users\Monaliza.Lima\OneDrive\Documentos\CURSOR-APRESENTACAO"
 pip install -r requirements.txt
 ```
 
+Confirme que existe: `dados\ESTUDO_DANONE_MAT_MAIO.xlsx`
+
 ---
 
-## Dashboard comercial (principal)
+## Dashboard comercial
+
+**Duplo clique:** `iniciar_dashboard.bat`
+
+**Ou no terminal:**
 
 ```powershell
 streamlit run streamlit_app.py
 ```
 
-### Publicar na internet (link permanente)
+URL: **http://localhost:8501**
 
-Guia completo: **[DEPLOY_STREAMLIT.md](DEPLOY_STREAMLIT.md)**
+### Publicar na internet
 
-Resumo:
-1. Subir o projeto no **GitHub** (repositório **privado** recomendado)
-2. Deploy em **https://share.streamlit.io** → Main file: `streamlit_app.py`
-3. Configurar **senha** em Settings → Secrets
+Guia: **[docs/DEPLOY_STREAMLIT.md](docs/DEPLOY_STREAMLIT.md)**
+
+1. Crie o repo **privado** `danone-dashboard-comercial` em https://github.com/new (conta [isadevlima](https://github.com/isadevlima))
+2. Envie o código (copie e cole no PowerShell):
+
+```powershell
+cd "C:\Users\Monaliza.Lima\OneDrive\Documentos\CURSOR-APRESENTACAO"
+git add .
+git commit -m "Dashboard Danone — estrutura organizada para deploy"
+git branch -M main
+git remote add origin https://github.com/isadevlima/danone-dashboard-comercial.git
+git push -u origin main
+```
+
+3. Deploy em https://share.streamlit.io → repositório `isadevlima/danone-dashboard-comercial` → Main file: `streamlit_app.py`
+4. Senha em Settings → Secrets
 
 ---
 
-| Aba | Conteúdo comercial |
-|-----|-------------------|
-| **Visão Geral** | KPIs Danone NTR, portfólio (Baby/Medical/Brasil), Top 3 mercado |
-| **Regional** | Faturamento e crescimento por região — onde focar vendas |
-| **Produtos** | Top SKUs, maiores crescimentos e quedas |
-| **Bandeiras** | Ranking ABRAFAD — redes prioritárias |
-| **Concorrência** | Top 15 laboratórios + ambiente concorrente |
-| **Impactos** | Produtos que puxam ou derrubam o resultado |
-| **Explorador** | Filtros por região, UF, bandeira e produto (aba Dados) |
+## Gerar apresentação e relatórios
+
+**Duplo clique:** `gerar_apresentacao.bat` · `gerar_relatorios.bat`
+
+**Ou no terminal (na raiz do projeto):**
+
+```powershell
+python -m scripts.gerar_apresentacao_diretoria
+python -m scripts.gerar_relatorios_laboratorios
+```
+
+Saídas:
+
+| Artefato | Pasta |
+|----------|--------|
+| PowerPoint | `saidas/apresentacoes/` |
+| Excel diretoria/cliente | `saidas/relatorios/` |
 
 ---
 
@@ -78,42 +136,14 @@ Resumo:
 
 | Aba | Uso |
 |-----|-----|
-| `Dados` | Detalhe produto × região × UF × bandeira (8.667 linhas) |
+| `Dados` | Detalhe produto × região × UF × bandeira |
 | `Analise Básica` | Total NTR, portfólio Danone |
-| `Ranking` | Laboratórios, Top 3, impactos positivos/negativos |
+| `Ranking` | Laboratórios, Top 3, impactos |
 | `Ranking Regiao\|UF` | Performance regional |
 | `Ranking ABRAFAD` | Bandeiras farmacêuticas |
 | `CONCORRENTE` | Panorama concorrente |
-| `FILTERS` | Metadados do recorte (somente leitura) |
 
 **Período:** MAT Abr/25 vs MAT Abr/26
-
----
-
-## Outros comandos
-
-### Apresentação PowerPoint
-
-```powershell
-python gerar_apresentacao_diretoria.py
-```
-
-### Relatórios Excel
-
-```powershell
-python gerar_relatorios_laboratorios.py
-```
-
----
-
-## Dados de referência
-
-| KPI | Valor |
-|-----|-------|
-| Danone NTR Abr/26 | R$ 2,06 bi (+20,09%) |
-| Baby Nutrit | +23,43% |
-| Medical Nut | −1,47% |
-| Top bandeira ABRAFAD | Rede Soma |
 
 ---
 
@@ -121,7 +151,5 @@ python gerar_relatorios_laboratorios.py
 
 | Etapa | Entrega |
 |-------|---------|
-| v1 | Scripts com CSV e slides estáticos |
-| v2 | Planilha Excel multi-abas + PowerPoint dinâmico |
-| v3 | Market share, ranking Brasil |
-| **v4** | Novo estudo `ESTUDO_DANONE_MAT_MAIO` + pacote `danone/` + **dashboard comercial** |
+| v4 | Estudo MAIO + pacote `danone/` + dashboard |
+| **v5** | Pastas `dados/`, `scripts/`, `docs/`, `saidas/` — pronto para GitHub |

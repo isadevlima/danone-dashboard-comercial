@@ -8,7 +8,7 @@ Link permanente tipo: `https://seu-app.streamlit.app`
 
 - Conta no **GitHub**: https://github.com/signup
 - Conta no **Streamlit Cloud**: https://share.streamlit.io (entrar com GitHub)
-- A planilha `ESTUDO_DANONE_MAT_MAIO.xlsx` (~22 MB) vai para o repositório — **use repositório PRIVADO** se os dados forem confidenciais
+- A planilha `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (~22 MB) vai para o repositório — **use repositório PRIVADO** se os dados forem confidenciais
 
 ---
 
@@ -22,21 +22,22 @@ Link permanente tipo: `https://seu-app.streamlit.app`
 4. **Não** marque “Add README” (já temos arquivos locais)
 5. Clique em **Create repository**
 
-No PowerShell, na pasta do projeto:
+Seu GitHub: **https://github.com/isadevlima**
+
+No PowerShell, na pasta do projeto — **copie e cole**:
 
 ```powershell
 cd "C:\Users\Monaliza.Lima\OneDrive\Documentos\CURSOR-APRESENTACAO"
 
-git init
 git add .
 git commit -m "Dashboard comercial Danone NTR — Streamlit Cloud"
 
 git branch -M main
-git remote add origin https://github.com/SEU_USUARIO/danone-dashboard-comercial.git
+git remote add origin https://github.com/isadevlima/danone-dashboard-comercial.git
 git push -u origin main
 ```
 
-Substitua `SEU_USUARIO` pelo seu usuário GitHub.
+> Se aparecer `remote origin already exists`, use só: `git push -u origin main`
 
 > O upload da planilha (~22 MB) pode levar alguns minutos.
 
@@ -54,7 +55,7 @@ Substitua `SEU_USUARIO` pelo seu usuário GitHub.
 1. Acesse https://share.streamlit.io
 2. Clique em **Create app**
 3. Preencha:
-   - **Repository:** `SEU_USUARIO/danone-dashboard-comercial`
+   - **Repository:** `isadevlima/danone-dashboard-comercial`
    - **Branch:** `main`
    - **Main file path:** `streamlit_app.py`
 4. Clique em **Deploy**
@@ -105,11 +106,11 @@ O dashboard atualiza sozinho quando você der `git push` no GitHub.
 
 ## Atualizar dados (nova planilha)
 
-1. Substitua `ESTUDO_DANONE_MAT_MAIO.xlsx` na pasta (mesmo nome)
+1. Substitua `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (mesmo nome)
 2. No PowerShell:
 
 ```powershell
-git add ESTUDO_DANONE_MAT_MAIO.xlsx
+git add dados/ESTUDO_DANONE_MAT_MAIO.xlsx
 git commit -m "Atualiza base MAT"
 git push
 ```
@@ -122,7 +123,7 @@ O Streamlit Cloud redeploya em ~1–2 min.
 
 | Problema | Solução |
 |----------|---------|
-| App não abre / erro de planilha | Confirme que `ESTUDO_DANONE_MAT_MAIO.xlsx` está no GitHub |
+| App não abre / erro de planilha | Confirme que `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` está no GitHub |
 | Deploy falhou | Veja **Manage app → Logs** no Streamlit Cloud |
 | Repo privado não aparece | Reconecte GitHub em share.streamlit.io → Settings |
 | App lento ao abrir | Normal na 1ª carga (~22 MB); depois fica em cache |
@@ -132,7 +133,7 @@ O Streamlit Cloud redeploya em ~1–2 min.
 ## Checklist final
 
 - [ ] Repositório GitHub criado (preferencialmente **privado**)
-- [ ] `ESTUDO_DANONE_MAT_MAIO.xlsx` incluído no push
+- [ ] `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` incluído no push
 - [ ] App deployado com main file `streamlit_app.py`
 - [ ] Senha configurada em Secrets
 - [ ] Link testado no celular/outro PC

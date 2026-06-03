@@ -19,10 +19,11 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from danone.config import BASE_DIR, PASTA_SAIDAS, PLANILHA_FONTE
+from danone.config import PASTA_RELATORIOS, PLANILHA_FONTE
+
 ARQUIVO_ENTRADA_PADRAO = PLANILHA_FONTE
-SAIDA_DIRETORIA = PASTA_SAIDAS / "Arquivo_Diretoria.xlsx"
-SAIDA_CLIENTE = PASTA_SAIDAS / "Arquivo_Cliente_Danone.xlsx"
+SAIDA_DIRETORIA = PASTA_RELATORIOS / "Arquivo_Diretoria.xlsx"
+SAIDA_CLIENTE = PASTA_RELATORIOS / "Arquivo_Cliente_Danone.xlsx"
 
 COL_LAB = "Laboratório"
 COL_FAT25 = "Faturamento 2025"
@@ -397,7 +398,7 @@ def gerar_relatorios(
     saida_cliente: Path = SAIDA_CLIENTE,
 ) -> tuple[Path, Path, pd.DataFrame]:
     entrada = Path(entrada or ARQUIVO_ENTRADA_PADRAO)
-    PASTA_SAIDAS.mkdir(parents=True, exist_ok=True)
+    PASTA_RELATORIOS.mkdir(parents=True, exist_ok=True)
 
     df = ler_base_laboratorios(entrada)
     df_diretoria = df.copy()

@@ -49,10 +49,9 @@ COLOR_TEAL = "#2E86AB"
 FONT_BODY = "Segoe UI"
 COLOR_LINK = RGBColor(0, 86, 179)
 
-BASE_DIR = Path(__file__).resolve().parent
-PASTA_SAIDAS = BASE_DIR / "saidas_automacao"
-# Apresentação na mesma pasta da planilha MAIO 2026
-PASTA_ENTREGA = BASE_DIR
+from danone.config import PASTA_APRESENTACOES
+
+PASTA_ENTREGA = PASTA_APRESENTACOES
 PPTX_LOCAL = "Apresentacao MAIO 2026.pptx"
 PPTX_EMAIL = "Apresentacao MAIO 2026_email.pptx"
 EXCEL_LINK_LABEL = "Abrir planilha de dados (Excel)"
@@ -880,7 +879,7 @@ if __name__ == "__main__":
         pptx, xlsx = gerar_apresentacao(modo_link="local")
         print(f"\n>>> Abra: {pptx.resolve()}")
         print(f">>> Planilha: {xlsx}")
-        print("Versao e-mail: python gerar_apresentacao_diretoria.py email")
+        print("Versao e-mail: python -m scripts.gerar_apresentacao_diretoria email")
         try:
             import os
             os.startfile(str(pptx.resolve()))
