@@ -62,7 +62,8 @@ def _verificar_acesso() -> bool:
 
     try:
         senha_cfg = st.secrets.get("dashboard", {}).get("senha")
-    except (FileNotFoundError, KeyError):
+    except Exception:
+        # Secrets ausentes, TOML inválido ou formato incorreto — app abre sem senha
         senha_cfg = None
 
     if not senha_cfg:
@@ -442,6 +443,7 @@ def _render_sidebar_brand() -> None:
     st.sidebar.caption("Dashboard Comercial · MAT MAIO")
     st.sidebar.divider()
     st.sidebar.markdown("**Navegação**")
+
 
 def _pasta_logo_abrafad() -> Path | None:
     """Pasta logo Abrafad na raiz do projeto."""
