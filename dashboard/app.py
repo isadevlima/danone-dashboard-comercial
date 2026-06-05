@@ -488,15 +488,13 @@ def _logo_abrafad_fundo_pagina(caminho: str) -> bytes:
 
 
 def _cabecalho_abrafad() -> None:
-    """Logo ABRAFAD no topo — fundo igual ao da página."""
+    """Logo ABRAFAD no topo — sem borda, fundo integrado à página."""
     logo = _resolver_logo_abrafad()
     if logo:
-        with st.container(border=True):
-            st.image(_logo_abrafad_fundo_pagina(str(logo)), width=200)
+        st.image(_logo_abrafad_fundo_pagina(str(logo)), width=200)
     else:
-        with st.container(border=True):
-            _html(_nome_abrafad_html())
-            st.caption("Coloque os PNG em `logo Abrafad/` na pasta do projeto.")
+        _html(_nome_abrafad_html())
+        st.caption("Coloque os PNG em `logo Abrafad/` na pasta do projeto.")
 
 
 def _plot(fig: go.Figure) -> None:
