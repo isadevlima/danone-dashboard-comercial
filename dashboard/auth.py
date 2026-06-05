@@ -12,13 +12,16 @@ COOKIE_NAME = "danone_dashboard_auth"
 COOKIE_DAYS = 30
 _PEPPER = "danone-ntr-dashboard-v1"
 _COOKIE_KEY = "danone_cookie_mgr"
+_SESSION_MGR = "_cookie_mgr"
 
 
 def _cookie_manager():
-    """Nova instância a cada rerun — mesma key reconecta ao componente no navegador."""
-    import extra_streamlit_components as stx
+    """Uma única instância por execução — evita StreamlitDuplicateElementKey."""
+    if _SESSION_MGR not in st.session_state:
+        import extra_streamlit_components as stx
 
-    return stx.CookieManager(key=_COOKIE_KEY)
+        st.session_state[_SESSION_MGR] = stx.CookieManager(key=_COOKIE_KEY)
+    return st.session_state[_SESSION_MGR]
 
 
 def ler_senha_config() -> str | None:
@@ -30,10 +33,6 @@ def ler_senha_config() -> str | None:
 
 def _auth_token(senha: str) -> str:
     return hmac.new(senha.encode(), _PEPPER.encode(), hashlib.sha256).hexdigest()
-
-
-def _token_do_cookie() -> str | None:
-    return _cookie_manager().get(COOKIE_NAME)
 
 
 def definir_autenticado(senha_cfg: str) -> None:
@@ -50,6 +49,7 @@ def encerrar_sessao() -> None:
     st.session_state.autenticado = False
     st.session_state.pop("_auth_cookie_check_done", None)
     _cookie_manager().delete(COOKIE_NAME, key="auth_del_cookie")
+    st.session_state.pop(_SESSION_MGR, None)
 
 
 def verificar_acesso() -> bool:
@@ -61,7 +61,8 @@ def verificar_acesso() -> bool:
     if st.session_state.get("autenticado"):
         return True
 
-    token_cookie = _token_do_cookie()
+    cm = _cookie_manager()
+    token_cookie = cm.get(COOKIE_NAME)
     if token_cookie == _auth_token(senha_cfg):
         st.session_state.autenticado = True
         return True
