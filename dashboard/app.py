@@ -608,7 +608,7 @@ def main() -> None:
         f'<h1 style="color:white;font-size:1.85rem;margin:0 0 0.4rem 0;font-weight:700;">'
         f"Dashboard Comercial — Danone NTR</h1>"
         f'<p style="color:rgba(255,255,255,0.92);margin:0;font-size:1rem;">'
-        f"{estudo.periodo_label} · Fonte: {path.name} · Leitura automática (Python, sem alterar o Excel)</p>"
+        f"{estudo.periodo_label} · Fonte: {path.name}</p>"
         f"</div>"
     )
 
