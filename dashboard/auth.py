@@ -11,15 +11,14 @@ import streamlit as st
 COOKIE_NAME = "danone_dashboard_auth"
 COOKIE_DAYS = 30
 _PEPPER = "danone-ntr-dashboard-v1"
+_COOKIE_KEY = "danone_cookie_mgr"
 
 
 def _cookie_manager():
-    """Singleton por sessão — não usar @st.cache_resource (CookieManager cria widgets)."""
-    if "danone_cookie_mgr" not in st.session_state:
-        import extra_streamlit_components as stx
+    """Nova instância a cada rerun — mesma key reconecta ao componente no navegador."""
+    import extra_streamlit_components as stx
 
-        st.session_state.danone_cookie_mgr = stx.CookieManager(key="danone_cookie_mgr")
-    return st.session_state.danone_cookie_mgr
+    return stx.CookieManager(key=_COOKIE_KEY)
 
 
 def ler_senha_config() -> str | None:
@@ -33,8 +32,8 @@ def _auth_token(senha: str) -> str:
     return hmac.new(senha.encode(), _PEPPER.encode(), hashlib.sha256).hexdigest()
 
 
-def _sessao_valida(senha_cfg: str, cookies: dict) -> bool:
-    return cookies.get(COOKIE_NAME) == _auth_token(senha_cfg)
+def _token_do_cookie() -> str | None:
+    return _cookie_manager().get(COOKIE_NAME)
 
 
 def definir_autenticado(senha_cfg: str) -> None:
@@ -49,6 +48,7 @@ def definir_autenticado(senha_cfg: str) -> None:
 
 def encerrar_sessao() -> None:
     st.session_state.autenticado = False
+    st.session_state.pop("_auth_cookie_check_done", None)
     _cookie_manager().delete(COOKIE_NAME, key="auth_del_cookie")
 
 
@@ -61,14 +61,15 @@ def verificar_acesso() -> bool:
     if st.session_state.get("autenticado"):
         return True
 
-    cookies = _cookie_manager().get_all()
-    if cookies is None:
-        # CookieManager ainda carregando do navegador — aguarda próximo rerun
-        st.stop()
-
-    if _sessao_valida(senha_cfg, cookies):
+    token_cookie = _token_do_cookie()
+    if token_cookie == _auth_token(senha_cfg):
         st.session_state.autenticado = True
         return True
+
+    # Primeira passagem: componente de cookie ainda sincronizando com o navegador
+    if not st.session_state.get("_auth_cookie_check_done"):
+        st.session_state._auth_cookie_check_done = True
+        st.stop()
 
     st.markdown(
         """
