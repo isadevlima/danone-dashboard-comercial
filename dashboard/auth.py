@@ -93,9 +93,10 @@ def verificar_acesso() -> bool:
 
 
 def render_botao_sair() -> None:
-    """Botão de logout na sidebar (só quando há senha configurada)."""
+    """Botão de logout no rodapé da sidebar."""
     if not ler_senha_config() or not st.session_state.get("autenticado"):
         return
+    st.sidebar.divider()
     if st.sidebar.button("Sair", use_container_width=True, key="btn_logout"):
         encerrar_sessao()
         st.rerun()

@@ -550,7 +550,6 @@ def main() -> None:
         return
 
     _render_sidebar_brand()
-    render_botao_sair()
 
     pagina = st.sidebar.radio(
         "Seção",
@@ -587,6 +586,7 @@ def main() -> None:
 
     st.sidebar.caption(f"Base: {path.name}")
     st.sidebar.caption("Leitura automática · Excel intacto")
+    render_botao_sair()
 
     if not path.exists():
         st.error(
