@@ -13,11 +13,13 @@ COOKIE_DAYS = 30
 _PEPPER = "danone-ntr-dashboard-v1"
 
 
-@st.cache_resource
 def _cookie_manager():
-    import extra_streamlit_components as stx
+    """Singleton por sessão — não usar @st.cache_resource (CookieManager cria widgets)."""
+    if "danone_cookie_mgr" not in st.session_state:
+        import extra_streamlit_components as stx
 
-    return stx.CookieManager(key="danone_cookie_mgr")
+        st.session_state.danone_cookie_mgr = stx.CookieManager(key="danone_cookie_mgr")
+    return st.session_state.danone_cookie_mgr
 
 
 def ler_senha_config() -> str | None:
