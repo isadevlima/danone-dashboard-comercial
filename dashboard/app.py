@@ -30,6 +30,7 @@ from danone import (
 from danone.models import LinhaFaturamento
 
 CACHE_ESTUDO_VERSAO = 5
+from dashboard.auth import render_botao_sair, verificar_acesso
 from dashboard.theme import (
     BOX_CARD,
     BOX_PANEL,
@@ -53,39 +54,6 @@ def _inject_theme() -> None:
         return
     st.markdown(CSS, unsafe_allow_html=True)
     st.session_state['_theme_css'] = True
-
-
-def _verificar_acesso() -> bool:
-    """Senha opcional via .streamlit/secrets.toml ou Streamlit Cloud Secrets."""
-    if st.session_state.get("autenticado"):
-        return True
-
-    try:
-        senha_cfg = st.secrets.get("dashboard", {}).get("senha")
-    except Exception:
-        # Secrets ausentes, TOML inválido ou formato incorreto — app abre sem senha
-        senha_cfg = None
-
-    if not senha_cfg:
-        return True
-
-    st.markdown("""
-    <div class="hero">
-        <h1>Dashboard Comercial — Danone NTR</h1>
-        <p>Acesso restrito · Digite a senha fornecida pelo responsável</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        senha = st.text_input("Senha", type="password", placeholder="Senha de acesso")
-        if st.button("Entrar", type="primary", use_container_width=True):
-            if senha == senha_cfg:
-                st.session_state.autenticado = True
-                st.rerun()
-            else:
-                st.error("Senha incorreta.")
-    return False
 
 
 @st.cache_data(show_spinner="Carregando estudo Danone…")
@@ -578,10 +546,11 @@ def _grafico_market_share(
 def main() -> None:
     _inject_theme()
 
-    if not _verificar_acesso():
+    if not verificar_acesso():
         return
 
     _render_sidebar_brand()
+    render_botao_sair()
 
     pagina = st.sidebar.radio(
         "Seção",
