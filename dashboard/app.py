@@ -7,7 +7,6 @@ Uso:
 
 from __future__ import annotations
 
-import base64
 import sys
 from pathlib import Path
 
@@ -49,7 +48,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown(CSS, unsafe_allow_html=True)
+def _inject_theme() -> None:
+    if st.session_state.get('_theme_css'):
+        return
+    st.markdown(CSS, unsafe_allow_html=True)
+    st.session_state['_theme_css'] = True
 
 
 def _verificar_acesso() -> bool:
@@ -352,12 +355,7 @@ def _grafico_crescimento_horizontal(
 
 
 def _html(html: str) -> None:
-    """Renderiza HTML com estilos inline (st.html quando disponível)."""
-    html = html.strip()
-    if hasattr(st, "html"):
-        st.html(html)
-    else:
-        st.markdown(html, unsafe_allow_html=True)
+    st.markdown(html.strip(), unsafe_allow_html=True)
 
 
 def _pasta_logo_danone() -> Path | None:
@@ -435,29 +433,15 @@ def _logo_danone_sidebar_bytes(caminho: str) -> tuple[bytes, str]:
     return buf.getvalue(), "image/png"
 
 
-def _html_sidebar_brand() -> str:
-    """Cabeçalho da sidebar: logo Danone + título."""
+def _render_sidebar_brand() -> None:
     logo = _resolver_logo_danone()
-    img_html = ""
     if logo:
-        dados, mime = _logo_danone_sidebar_bytes(str(logo))
-        b64 = base64.b64encode(dados).decode("ascii")
-        img_html = (
-            f'<img src="data:{mime};base64,{b64}" alt="Danone" />'
-        )
-    return f"""
-    <div class="sidebar-brand">
-        <div class="sidebar-brand-row">
-            {img_html}
-            <div class="sidebar-brand-text">
-                <div class="sidebar-brand-title">Danone NTR</div>
-                <div class="sidebar-brand-sub">Dashboard Comercial · MAT MAIO</div>
-            </div>
-        </div>
-    </div>
-    <div class="sidebar-nav-label">Navegação</div>
-    """
-
+        dados, _ = _logo_danone_sidebar_bytes(str(logo))
+        st.sidebar.image(dados, width=72)
+    st.sidebar.markdown("### Danone NTR")
+    st.sidebar.caption("Dashboard Comercial · MAT MAIO")
+    st.sidebar.divider()
+    st.sidebar.markdown("**Navegação**")
 
 def _pasta_logo_abrafad() -> Path | None:
     """Pasta logo Abrafad na raiz do projeto."""
@@ -537,14 +521,8 @@ def _cabecalho_abrafad() -> None:
     """Logo ABRAFAD no topo — fundo igual ao da página."""
     logo = _resolver_logo_abrafad()
     if logo:
-        dados = base64.b64encode(_logo_abrafad_fundo_pagina(str(logo))).decode("ascii")
-        _html(
-            f'<div style="background:{FUNDO_PAGINA};border-radius:14px;padding:1rem 1.4rem;'
-            f'margin:0 0 1.25rem 0;border:1px solid #E2E8F0;">'
-            f'<img src="data:image/png;base64,{dados}" alt="ABRAFAD" '
-            f'style="height:52px;width:auto;display:block;max-width:100%;" />'
-            f"</div>"
-        )
+        with st.container(border=True):
+            st.image(_logo_abrafad_fundo_pagina(str(logo)), width=200)
     else:
         with st.container(border=True):
             _html(_nome_abrafad_html())
@@ -596,10 +574,12 @@ def _grafico_market_share(
 
 
 def main() -> None:
+    _inject_theme()
+
     if not _verificar_acesso():
         return
 
-    st.sidebar.markdown(_html_sidebar_brand(), unsafe_allow_html=True)
+    _render_sidebar_brand()
 
     pagina = st.sidebar.radio(
         "Seção",
@@ -634,10 +614,8 @@ def main() -> None:
             else:
                 st.sidebar.warning("Caminho inválido — usando planilha em dados/.")
 
-    st.sidebar.markdown(
-        f'<div class="sidebar-footer">Base: {path.name}<br>Leitura automática · Excel intacto</div>',
-        unsafe_allow_html=True,
-    )
+    st.sidebar.caption(f"Base: {path.name}")
+    st.sidebar.caption("Leitura automática · Excel intacto")
 
     if not path.exists():
         st.error(
