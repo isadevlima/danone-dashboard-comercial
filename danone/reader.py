@@ -488,7 +488,7 @@ def cards_panorama_visao_geral(
             CardPanoramaVisao(
                 titulo="DANONE BRASIL",
                 subtitulo="Faturamento NTR total no Brasil",
-                ms_rotulo="Share no mercado NTR",
+                ms_rotulo="Participação no mercado NTR",
                 fat_2025=danone.fat_2025,
                 fat_2026=danone.fat_2026,
                 crescimento=danone.crescimento,
@@ -503,7 +503,7 @@ def cards_panorama_visao_geral(
             CardPanoramaVisao(
                 titulo="DANONE · ABRAFAD",
                 subtitulo="Faturamento da Danone no canal farmácias ABRAFAD",
-                ms_rotulo="Share no canal ABRAFAD",
+                ms_rotulo="Participação no canal ABRAFAD",
                 fat_2025=danone_abrafad.fat_2025,
                 fat_2026=danone_abrafad.fat_2026,
                 crescimento=danone_abrafad.crescimento,
@@ -518,7 +518,7 @@ def cards_panorama_visao_geral(
             CardPanoramaVisao(
                 titulo="DANONE · CONCORRENTES",
                 subtitulo="Posição da Danone frente ao bloco concorrentes",
-                ms_rotulo="Share Danone vs concorrentes",
+                ms_rotulo="Participação vs concorrentes",
                 fat_2025=danone.fat_2025,
                 fat_2026=danone.fat_2026,
                 crescimento=danone.crescimento,

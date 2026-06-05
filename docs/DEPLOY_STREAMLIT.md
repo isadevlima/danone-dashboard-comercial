@@ -1,116 +1,139 @@
-# Publicar o Dashboard no Streamlit Cloud (Opção 3)
+# Publicar o Dashboard no Streamlit Cloud
 
 Link permanente tipo: `https://seu-app.streamlit.app`
 
 ---
 
-## Antes de começar
+## Dados e confidencialidade (leia antes)
 
-- Conta no **GitHub**: https://github.com/signup
-- Conta no **Streamlit Cloud**: https://share.streamlit.io (entrar com GitHub)
-- A planilha `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (~22 MB) vai para o repositório — **use repositório PRIVADO** se os dados forem confidenciais
+A planilha `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` contém **dados comerciais** (faturamento, produto, região, bandeira) — não há CPF ou nomes de pessoas, então o risco **direto de LGPD** é baixo.
+
+O risco principal é **confidencialidade comercial** (Danone, ABRAFAD, concorrentes). Por isso:
+
+| O que protege | O que NÃO protege |
+|---------------|-------------------|
+| Repositório **privado** no GitHub | Senha do app **não** impede download do Excel no GitHub público |
+| **Senha** no Streamlit Secrets | Link do GitHub público expõe a planilha a qualquer clone |
+| Compartilhar só o link `.streamlit.app` | Histórico público antigo no GitHub pode ter cópias da planilha |
+
+**Recomendação:** repositório **privado** + senha forte no app.
 
 ---
 
-## Passo 1 — Subir o projeto no GitHub
+## Passo a passo — tornar o repo privado e manter o Streamlit funcionando
 
-### Opção A — Pelo site do GitHub (mais fácil)
+Siga nesta ordem se o repositório está **público** hoje.
 
-1. Acesse https://github.com/new
-2. Nome sugerido: `danone-dashboard-comercial`
-3. Marque **Private** (recomendado)
-4. **Não** marque “Add README” (já temos arquivos locais)
-5. Clique em **Create repository**
+### A) GitHub — tornar o repositório privado
 
-Seu GitHub: **https://github.com/isadevlima**
+1. Abra: https://github.com/isadevlima/danone-dashboard-comercial
+2. Clique em **Settings** (aba do repositório)
+3. Role até **Danger Zone**
+4. Clique em **Change repository visibility**
+5. Escolha **Make private**
+6. Confirme digitando o nome do repositório
 
-No PowerShell, na pasta do projeto — **copie e cole**:
+> A planilha deixa de ser visível para quem não tem acesso ao repo. Quem já clonou quando era público pode ter cópia — avise o gestor se necessário.
+
+### B) Streamlit Cloud — permitir repositórios privados
+
+1. Abra: https://share.streamlit.io
+2. Faça login com a **mesma conta GitHub** (`isadevlima`)
+3. No canto superior direito, clique no **ícone de perfil**
+4. Vá em **Settings**
+5. Em **Linked accounts** / **GitHub**, clique em **Reconnect** ou **Grant access**
+6. Na tela do GitHub, autorize o Streamlit a acessar repositórios **privados** (marque `danone-dashboard-comercial` ou “All repositories” conforme sua política)
+7. Confirme e volte ao Streamlit Cloud
+
+### C) Streamlit Cloud — verificar se o app ainda está ligado ao repo
+
+1. Em https://share.streamlit.io, abra seu app (ex.: `danone-dashboard-comercial`)
+2. Menu **⋮** (três pontos) → **Settings**
+3. Confira:
+   - **Repository:** `isadevlima/danone-dashboard-comercial`
+   - **Branch:** `main`
+   - **Main file path:** `streamlit_app.py`
+4. Se o app sumiu ou deu erro após tornar privado:
+   - **Create app** de novo com os mesmos campos acima
+   - Ou **Manage app → Settings → Reboot app**
+
+### D) Streamlit Cloud — configurar senha (obrigatório em produção)
+
+1. No app publicado, abra **Settings** (⚙️)
+2. No menu lateral, clique em **Secrets**
+3. Cole (troque pela **sua** senha forte — mínimo 12 caracteres, letras e números):
+
+```toml
+[dashboard]
+senha = "SuaSenhaForteAqui2026"
+```
+
+4. Clique em **Save**
+5. O app **reinicia sozinho** (aguarde 1–2 minutos)
+6. Abra o link do app em aba anônima e teste a tela de senha
+
+> Sem a seção `[dashboard]` nos Secrets, o app fica **aberto** para quem tiver o link.
+
+### E) Testar
+
+1. Abra o link `https://….streamlit.app` (não o GitHub)
+2. Digite a senha
+3. Confira se a **Visão Geral** carrega (planilha em `dados/`)
+4. Opcional: teste em outro celular/PC
+
+### F) Compartilhar com o time
+
+Envie **apenas**:
+
+- Link do app Streamlit (`https://….streamlit.app`)
+- Senha (por canal seguro: Teams privado, não e-mail aberto se possível)
+
+**Não** divulgue o link do repositório GitHub.
+
+---
+
+## Deploy inicial (primeira vez)
+
+### Antes de começar
+
+- Conta **GitHub**: https://github.com/signup
+- Conta **Streamlit Cloud**: https://share.streamlit.io (login com GitHub)
+- Planilha em `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` (~23 MB)
+
+### Passo 1 — GitHub
+
+1. https://github.com/new
+2. Nome: `danone-dashboard-comercial`
+3. Marque **Private**
+4. **Create repository**
 
 ```powershell
 cd "C:\Users\Monaliza.Lima\OneDrive\Documentos\CURSOR-APRESENTACAO"
-
 git add .
-git commit -m "Dashboard comercial Danone NTR — Streamlit Cloud"
-
+git commit -m "Dashboard comercial Danone NTR"
 git branch -M main
 git remote add origin https://github.com/isadevlima/danone-dashboard-comercial.git
 git push -u origin main
 ```
 
-> Se aparecer `remote origin already exists`, use só: `git push -u origin main`
+### Passo 2 — Streamlit Cloud
 
-> O upload da planilha (~22 MB) pode levar alguns minutos.
-
-### Opção B — GitHub Desktop
-
-1. Baixe: https://desktop.github.com
-2. **File → Add local repository** → selecione a pasta `CURSOR-APRESENTACAO`
-3. **Publish repository** → marque **Keep this code private**
-4. Publish
+1. https://share.streamlit.io → **Create app**
+2. **Repository:** `isadevlima/danone-dashboard-comercial`
+3. **Branch:** `main`
+4. **Main file path:** `streamlit_app.py`
+5. **Deploy**
+6. Siga a seção **D** acima para configurar **Secrets**
 
 ---
 
-## Passo 2 — Deploy no Streamlit Cloud
+## Atualizar planilha (nova base MAT)
 
-1. Acesse https://share.streamlit.io
-2. Clique em **Create app**
-3. Preencha:
-   - **Repository:** `isadevlima/danone-dashboard-comercial`
-   - **Branch:** `main`
-   - **Main file path:** `streamlit_app.py`
-4. Clique em **Deploy**
-
-Aguarde 2–5 minutos. O link aparecerá no formato:
-
-`https://danone-dashboard-comercial.streamlit.app`
-
-(ou nome parecido, conforme o repositório)
-
----
-
-## Passo 3 — Senha de acesso (recomendado)
-
-No Streamlit Cloud:
-
-1. Abra seu app → **Settings** (⚙️)
-2. **Secrets** → cole:
-
-```toml
-[dashboard]
-senha = "Danone2026"
-```
-
-3. **Save** → o app reinicia sozinho
-
-Quem abrir o link precisará dessa senha. Troque por uma senha forte.
-
-Para testar localmente, copie o exemplo:
-
-```powershell
-copy .streamlit\secrets.toml.example .streamlit\secrets.toml
-# Edite secrets.toml com sua senha
-```
-
----
-
-## Passo 4 — Compartilhar com o time
-
-Envie:
-
-- **Link:** `https://seu-app.streamlit.app`
-- **Senha:** (se configurou secrets)
-
-O dashboard atualiza sozinho quando você der `git push` no GitHub.
-
----
-
-## Atualizar dados (nova planilha)
-
-1. Substitua `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (mesmo nome)
+1. Substitua `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` (ou adicione novo arquivo e ajuste `danone/config.py` se o nome mudar)
 2. No PowerShell:
 
 ```powershell
-git add dados/ESTUDO_DANONE_MAT_MAIO.xlsx
+git add dados/
 git commit -m "Atualiza base MAT"
 git push
 ```
@@ -123,17 +146,20 @@ O Streamlit Cloud redeploya em ~1–2 min.
 
 | Problema | Solução |
 |----------|---------|
-| App não abre / erro de planilha | Confirme que `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` está no GitHub |
-| Deploy falhou | Veja **Manage app → Logs** no Streamlit Cloud |
-| Repo privado não aparece | Reconecte GitHub em share.streamlit.io → Settings |
-| App lento ao abrir | Normal na 1ª carga (~22 MB); depois fica em cache |
+| Repo privado não aparece no Streamlit | share.streamlit.io → Settings → reconectar GitHub e autorizar repos privados |
+| App pede senha mas não aceita | Confira Secrets: `[dashboard]` e `senha = "..."` (aspas) |
+| App abre sem pedir senha | Secrets vazio ou seção `[dashboard]` ausente |
+| Erro de planilha no deploy | Confirme `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` no GitHub (repo privado, você precisa estar logado para ver) |
+| Deploy falhou | **Manage app → Logs** |
+| App lento na 1ª carga | Normal (~23 MB); depois usa cache |
 
 ---
 
-## Checklist final
+## Checklist de segurança
 
-- [ ] Repositório GitHub criado (preferencialmente **privado**)
-- [ ] `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` incluído no push
-- [ ] App deployado com main file `streamlit_app.py`
-- [ ] Senha configurada em Secrets
-- [ ] Link testado no celular/outro PC
+- [ ] Repositório GitHub **privado**
+- [ ] Streamlit autorizado a acessar repo privado
+- [ ] Senha forte em **Secrets** (não usar exemplos da documentação)
+- [ ] Link testado com senha em aba anônima
+- [ ] Time recebe só link `.streamlit.app` + senha
+- [ ] Gestor/jurídico Danone ciente do uso em nuvem (Streamlit)

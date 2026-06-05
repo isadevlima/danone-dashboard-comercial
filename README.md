@@ -10,8 +10,22 @@ Projeto para **ler** a planilha `dados/ESTUDO_DANONE_MAT_MAIO.xlsx` (read-only) 
 
 ## Regra principal
 
-> **`dados/ESTUDO_DANONE_MAT_MAIO.xlsx` é sempre a fonte da verdade.**
+> **`dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` é sempre a fonte da verdade.**
 > Os scripts **apenas leem** — nunca alteram o Excel.
+
+---
+
+## Dados e confidencialidade
+
+A planilha traz **faturamento e market share** por produto, região e bandeira — dados **comerciais**, não cadastro de pessoas (sem CPF/nome de cliente). Risco LGPD direto: **baixo**. Risco de **vazamento comercial**: **alto** se o GitHub ficar público.
+
+**Para produção (Streamlit Cloud):**
+
+1. Repositório GitHub **privado** (o Streamlit Cloud aceita repo privado)
+2. **Senha** em Streamlit → Settings → Secrets (`[dashboard]` / `senha`)
+3. Compartilhar só o link `.streamlit.app`, não o GitHub
+
+Passo a passo completo: **[docs/DEPLOY_STREAMLIT.md](docs/DEPLOY_STREAMLIT.md)** (seções A–F).
 
 ---
 
@@ -108,7 +122,7 @@ git push -u origin main
 ```
 
 3. Deploy em https://share.streamlit.io → repositório `isadevlima/danone-dashboard-comercial` → Main file: `streamlit_app.py`
-4. Senha em Settings → Secrets
+4. Repo **privado** + senha em Streamlit → Settings → Secrets (ver [DEPLOY_STREAMLIT.md](docs/DEPLOY_STREAMLIT.md))
 
 ---
 
