@@ -6,7 +6,7 @@ Link permanente tipo: `https://seu-app.streamlit.app`
 
 ## Dados e confidencialidade (leia antes)
 
-A planilha `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` contém **dados comerciais** (faturamento, produto, região, bandeira) — não há CPF ou nomes de pessoas, então o risco **direto de LGPD** é baixo.
+As planilhas em `dados/*.xlsx` (ex.: `DANONE_NOVO_ESTUDO01.xlsx`) contêm **dados comerciais** (faturamento, produto, região) — não há CPF ou nomes de pessoas, então o risco **direto de LGPD** é baixo.
 
 O risco principal é **confidencialidade comercial** (Danone, ABRAFAD, concorrentes). Por isso:
 
@@ -98,7 +98,7 @@ Envie **apenas**:
 
 - Conta **GitHub**: https://github.com/signup
 - Conta **Streamlit Cloud**: https://share.streamlit.io (login com GitHub)
-- Planilha em `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` (~23 MB)
+- Planilha em `dados/` (ex.: `DANONE_NOVO_ESTUDO01.xlsx`, ~21 MB)
 
 ### Passo 1 — GitHub
 
@@ -129,7 +129,7 @@ git push -u origin main
 
 ## Atualizar planilha (nova base MAT)
 
-1. Substitua `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` (ou adicione novo arquivo e ajuste `danone/config.py` se o nome mudar)
+1. Coloque ou substitua arquivos `.xlsx` na pasta `dados/` — o dashboard usa automaticamente o mais recente
 2. No PowerShell:
 
 ```powershell
@@ -138,7 +138,7 @@ git commit -m "Atualiza base MAT"
 git push
 ```
 
-O Streamlit Cloud redeploya em ~1–2 min.
+O Streamlit Cloud redeploya em ~1–2 min. O **mesmo link** `.streamlit.app` continua válido após o push.
 
 ---
 
@@ -149,9 +149,9 @@ O Streamlit Cloud redeploya em ~1–2 min.
 | Repo privado não aparece no Streamlit | share.streamlit.io → Settings → reconectar GitHub e autorizar repos privados |
 | App pede senha mas não aceita | Confira Secrets: `[dashboard]` e `senha = "..."` (aspas) |
 | App abre sem pedir senha | Secrets vazio ou seção `[dashboard]` ausente |
-| Erro de planilha no deploy | Confirme `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx` no GitHub (repo privado, você precisa estar logado para ver) |
+| Erro de planilha no deploy | Confirme pelo menos um `.xlsx` em `dados/` no GitHub (repo privado, você precisa estar logado para ver) |
 | Deploy falhou | **Manage app → Logs** |
-| App lento na 1ª carga | Normal (~23 MB); depois usa cache |
+| App lento na 1ª carga | Normal (~21 MB por planilha); depois usa cache |
 
 ---
 
