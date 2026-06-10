@@ -1,10 +1,12 @@
 """
-Leitura read-only de ESTUDO_DANONE_MAT_MAIO.xlsx.
+Leitura read-only de planilhas de estudo (.xlsx em dados/).
 Nunca altera o arquivo de origem.
+Suporta formato novo (DANONE_NOVO_ESTUDO01) e legado (ESTUDO_DANONE_MAT_MAIO).
 """
 
 from __future__ import annotations
 
+import re
 import shutil
 import unicodedata
 from pathlib import Path
@@ -12,25 +14,84 @@ from pathlib import Path
 import pandas as pd
 
 from danone.config import (
+    ABA_ANALISE_CANDIDATOS,
+    ABA_CONCORRENTE_CANDIDATOS,
+    ABA_DADOS_CANDIDATOS,
+    ABA_RANKING_CANDIDATOS,
+    ABA_REGIAO_CANDIDATOS,
+    ABA_ABRAFAD_PREFIXOS,
     BASE_DIR,
-    PERIODO_LABEL,
+    PERIODO_LABEL_PADRAO,
     PLANILHA_FONTE,
-    SHEET_ABRAFAD,
-    SHEET_CONCORRENTE,
-    SHEET_DADOS,
-    SHEET_RANKING,
-    SHEET_REGIAO,
+    resolver_planilha,
 )
+from danone.models import CardPanoramaVisao, EstudoDanone, LinhaFaturamento, MetadadosEstudo
 
 PASTA_CACHE_PLANILHA = BASE_DIR / ".cache" / "planilha"
-from danone.models import CardPanoramaVisao, EstudoDanone, LinhaFaturamento
 
-# Layout aba Ranking (ESTUDO_DANONE_MAT_MAIO)
+# Layout legado aba Ranking
 COL_LAB_ESQ = 0
 COL_LAB_DIR = 5
 COL_RANK_ESQ = 4
+
 FATURAMENTO_MINIMO_LAB = 1_000_000
 FATURAMENTO_MINIMO_BANDEIRA = 100_000
+
+MARCADORES_PRODUTO = (
+    " PO ",
+    " G X ",
+    " LAT",
+    " KIT ",
+    " JR ",
+    " POLAP",
+    " SUSTAIN",
+    " TRIDENT ",
+    " LACTA ",
+    " APTAMIL",
+    " APTANUTRI",
+    " MILNUTRI",
+    " PREGOMIN",
+)
+MARCADORES_LAB_DANONE = ("APTAMIL", "APTANUTRI", "MILNUTRI", "PREGOMIN", "NUTRICIA")
+
+
+def eh_laboratorio(nome: str) -> bool:
+    """True quando o rótulo é laboratório (não SKU/produto)."""
+    if not nome or not isinstance(nome, str):
+        return False
+    n = nome.strip()
+    if not n or n.upper() in ("LABORATORIO", "LABORATÓRIO", "NAN"):
+        return False
+    if n.lower().startswith("total") or n.lower() in ("total", "ranking"):
+        return False
+    upper = n.upper()
+    if any(m in upper for m in MARCADORES_PRODUTO):
+        return False
+    if re.search(r"\d+\.?\d*\s*G\b", upper):
+        return False
+    if re.search(r"\sX\s*\d", upper):
+        return False
+    if re.search(r"\d+\.?\d*\s*KG", upper):
+        return False
+    if len(n.split()) > 6:
+        return False
+    return True
+
+
+def inferir_laboratorio(nome: str) -> str:
+    """Infere laboratório a partir do nome de produto ou rótulo agregado."""
+    upper = nome.upper()
+    if "DANONE" in upper or any(m in upper for m in MARCADORES_LAB_DANONE):
+        return "DANONE"
+    if "CONCORRENTE" in upper:
+        return "Concorrente"
+    return nome.strip()
+
+
+def _texto_chave(valor: str) -> str:
+    norm = unicodedata.normalize("NFD", str(valor))
+    sem_acento = "".join(c for c in norm if unicodedata.category(c) != "Mn")
+    return sem_acento.lower().strip()
 
 
 def _num(valor) -> float | None:
@@ -52,7 +113,10 @@ def _num(valor) -> float | None:
 
 def _pct(valor) -> float | None:
     if isinstance(valor, (int, float)) and not (isinstance(valor, float) and pd.isna(valor)):
-        return float(valor)
+        v = float(valor)
+        if abs(v) > 1.5:
+            return v / 100
+        return v
     texto = str(valor).strip()
     if not texto or texto.lower() in ("nan", "none", "-"):
         return None
@@ -112,12 +176,6 @@ def _market_share_na_linha(row, col_preferida: int = 4) -> float | None:
     return None
 
 
-def _texto_chave(valor: str) -> str:
-    norm = unicodedata.normalize("NFD", valor)
-    sem_acento = "".join(c for c in norm if unicodedata.category(c) != "Mn")
-    return sem_acento.lower().strip()
-
-
 def _resolver_leitura_planilha(caminho: Path) -> Path:
     """Sincroniza cópia em .cache/planilha/ (funciona com Excel aberto no Windows)."""
     caminho = Path(caminho).resolve()
@@ -129,9 +187,111 @@ def _resolver_leitura_planilha(caminho: Path) -> Path:
         shutil.copy2(caminho, destino)
         return destino
     except (PermissionError, OSError):
-        if destino.exists():
-            return destino
         return caminho
+
+
+def _mapa_abas(caminho: Path) -> dict[str, str]:
+    """Mapa chave normalizada → nome real da aba."""
+    xl = pd.ExcelFile(caminho)
+    return {_texto_chave(n): n for n in xl.sheet_names}
+
+
+def _resolver_aba(
+    caminho: Path,
+    *candidatos: str,
+    prefixos: tuple[str, ...] = (),
+) -> str | None:
+    mapa = _mapa_abas(caminho)
+    for nome in candidatos:
+        chave = _texto_chave(nome)
+        if chave in mapa:
+            return mapa[chave]
+    for prefixo in prefixos:
+        pref = _texto_chave(prefixo)
+        for chave, real in mapa.items():
+            if chave.startswith(pref):
+                return real
+    return None
+
+
+def _inferir_cliente(caminho: Path) -> str:
+    nome = caminho.stem.upper()
+    for token in re.split(r"[_\-\s]+", nome):
+        if token in ("ESTUDO", "NOVO", "MAT", "MAIO", "JUNHO", "01", "1", "V1"):
+            continue
+        if len(token) >= 3:
+            return token.title()
+    return "Estudo"
+
+
+def _mes_abrev(numero: str) -> str:
+    meses = {
+        "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
+        "05": "Mai", "06": "Jun", "07": "Jul", "08": "Ago",
+        "09": "Set", "10": "Out", "11": "Nov", "12": "Dez",
+    }
+    return meses.get(numero.zfill(2), numero)
+
+
+def _inferir_periodo_label(caminho: Path) -> str:
+    aba = _resolver_aba(caminho, *ABA_DADOS_CANDIDATOS)
+    if not aba:
+        aba = _resolver_aba(caminho, *ABA_ANALISE_CANDIDATOS)
+    if not aba:
+        return PERIODO_LABEL_PADRAO
+
+    try:
+        df = pd.read_excel(caminho, sheet_name=aba, header=None, nrows=3)
+    except (ValueError, FileNotFoundError):
+        return PERIODO_LABEL_PADRAO
+
+    textos = " ".join(str(v) for v in df.values.flatten() if pd.notna(v))
+    vistos: list[tuple[str, str]] = []
+    for m, a in re.findall(r"(\d{2})/(\d{2})", textos):
+        par = (m, a)
+        if par not in vistos:
+            vistos.append(par)
+    if len(vistos) >= 2:
+        m1, a1 = vistos[0]
+        m2, a2 = vistos[1]
+        return f"MAT {_mes_abrev(m1)}/{a1} vs MAT {_mes_abrev(m2)}/{a2}"
+    if len(vistos) == 1:
+        m, a = vistos[0]
+        return f"MAT {_mes_abrev(m)}/{a}"
+    return PERIODO_LABEL_PADRAO
+
+
+def _detectar_metadados(caminho: Path) -> MetadadosEstudo:
+    mapa = _mapa_abas(caminho)
+    abas = tuple(pd.ExcelFile(caminho).sheet_names)
+    tem_abrafad = any(k.startswith("ranking abrafad") for k in mapa)
+    tem_concorrente = any(_texto_chave(c) in mapa for c in ABA_CONCORRENTE_CANDIDATOS)
+
+    aba_dados = _resolver_aba(caminho, *ABA_DADOS_CANDIDATOS)
+    tem_uf = False
+    tem_bandeiras = tem_abrafad
+    if aba_dados:
+        try:
+            cols = [str(c).strip().lower() for c in pd.read_excel(caminho, sheet_name=aba_dados, nrows=0).columns]
+            tem_uf = any("uf" == c or c.endswith("|uf") for c in cols)
+            tem_bandeiras = tem_bandeiras or any("bandeira" in c for c in cols)
+        except (ValueError, FileNotFoundError):
+            pass
+
+    formato = "legado" if tem_abrafad or "ranking regiao|uf" in mapa else "novo"
+    if _texto_chave(ABA_DADOS_CANDIDATOS[0]) in mapa:
+        formato = "novo"
+
+    return MetadadosEstudo(
+        arquivo=caminho.name,
+        cliente=_inferir_cliente(caminho),
+        abas=abas,
+        formato=formato,
+        tem_bandeiras=tem_bandeiras,
+        tem_uf=tem_uf,
+        tem_abrafad=tem_abrafad,
+        tem_concorrente_aba=tem_concorrente,
+    )
 
 
 def _linha(row, col_lab: int, ler_ms: bool = True) -> LinhaFaturamento | None:
@@ -140,7 +300,7 @@ def _linha(row, col_lab: int, ler_ms: bool = True) -> LinhaFaturamento | None:
         return None
     nome = str(nome).strip()
     ignorar = (
-        "laboratorio", "laboratório", "nan", "(vários itens)",
+        "laboratorio", "laboratório", "nan", "(vários itens)", "(varios itens)",
         "setor_nec_aberto", "setor nec aberto", "ranking", "concorrentes",
         "bandeira", "regiao|uf", "região|uf", "total",
     )
@@ -176,34 +336,65 @@ def _linha(row, col_lab: int, ler_ms: bool = True) -> LinhaFaturamento | None:
     )
 
 
-def _sheet_por_prefixo(caminho: Path, prefixo: str) -> str | None:
-    xl = pd.ExcelFile(caminho)
-    prefixo_lower = prefixo.lower()
-    for nome in xl.sheet_names:
-        if nome.lower().startswith(prefixo_lower):
-            return nome
-    return None
+def _detectar_col_lab_ranking(df: pd.DataFrame) -> int:
+    """Detecta coluna de nomes no layout novo (rank em col 0) ou legado."""
+    for _, row in df.head(12).iterrows():
+        c0 = row.iloc[0] if len(row) else None
+        c1 = row.iloc[1] if len(row) > 1 else None
+        try:
+            if c0 is not None and not pd.isna(c0) and int(float(c0)) >= 1:
+                if c1 is not None and not pd.isna(c1):
+                    t1 = str(c1).strip().lower()
+                    if t1 not in ("laboratorio", "laboratório", "ranking", "nan"):
+                        return 1
+        except (TypeError, ValueError):
+            pass
+    return COL_LAB_ESQ
 
 
-def _extrair_bloco_ranking(df: pd.DataFrame, col_lab: int) -> list[LinhaFaturamento]:
+def _extrair_bloco_ranking(
+    df: pd.DataFrame,
+    col_lab: int,
+    *,
+    apenas_labs: bool = True,
+) -> list[LinhaFaturamento]:
     saida: list[LinhaFaturamento] = []
     for _, row in df.iterrows():
         linha = _linha(row, col_lab)
         if linha is None:
             continue
-        if linha.nome.lower().startswith("total geral"):
+        nome = linha.nome.lower()
+        if nome.startswith("total") or nome.startswith("impactos"):
+            break
+        if apenas_labs and not eh_laboratorio(linha.nome):
             continue
-        if linha.fat_2026 < FATURAMENTO_MINIMO_LAB:
+        if linha.fat_2026 < FATURAMENTO_MINIMO_LAB and linha.fat_2025 < FATURAMENTO_MINIMO_LAB:
             continue
         saida.append(linha)
     return saida
 
 
-def _extrair_top3_curado(df: pd.DataFrame) -> list[LinhaFaturamento]:
-    """Top 3 do bloco direito (NESTLE, DANONE, ABBOTT) antes de TOTAL/Impactos."""
+def _extrair_ranking_todas_linhas(df: pd.DataFrame, col_lab: int) -> list[LinhaFaturamento]:
+    """Ranking incluindo CONCORRENTE e unidades — sem filtro de laboratório."""
     saida: list[LinhaFaturamento] = []
     for _, row in df.iterrows():
-        linha = _linha(row, COL_LAB_DIR)
+        linha = _linha(row, col_lab)
+        if linha is None:
+            continue
+        nome = linha.nome.lower()
+        if nome.startswith("total") or nome.startswith("impactos"):
+            break
+        if linha.fat_2026 < FATURAMENTO_MINIMO_LAB and linha.fat_2025 < FATURAMENTO_MINIMO_LAB:
+            continue
+        saida.append(linha)
+    return saida
+
+
+def _extrair_top3_curado(df: pd.DataFrame, col_lab: int = COL_LAB_DIR) -> list[LinhaFaturamento]:
+    """Top 3 do bloco direito (legado) ou primeiras linhas ranqueadas (novo)."""
+    saida: list[LinhaFaturamento] = []
+    for _, row in df.iterrows():
+        linha = _linha(row, col_lab)
         if linha is None:
             continue
         upper = linha.nome.upper()
@@ -229,21 +420,37 @@ def _extrair_top_por_rank(df: pd.DataFrame, max_rank: int = 3) -> list[LinhaFatu
             continue
         if r < 1 or r > max_rank:
             continue
-        linha = _linha(row, COL_LAB_DIR) or _linha(row, COL_LAB_ESQ)
+        linha = _linha(row, COL_LAB_DIR) or _linha(row, COL_LAB_ESQ) or _linha(row, 1)
         if linha:
             por_rank[r] = linha
     if por_rank:
         return [por_rank[r] for r in sorted(por_rank) if r in por_rank]
-    return _extrair_top3_curado(df)
+
+    col_lab = _detectar_col_lab_ranking(df)
+    linhas = _extrair_ranking_todas_linhas(df, col_lab)
+    linhas.sort(key=lambda x: x.fat_2026, reverse=True)
+    return linhas[:max_rank]
+
+
+def _coluna_impactos(df: pd.DataFrame) -> int:
+    for col in (COL_LAB_DIR, 1, COL_LAB_ESQ, 0):
+        for _, row in df.iterrows():
+            cel = row.iloc[col] if col < len(row) else None
+            if cel is None or (isinstance(cel, float) and pd.isna(cel)):
+                continue
+            if str(cel).strip().lower() == "impactos positivos":
+                return col
+    return COL_LAB_DIR
 
 
 def _extrair_impactos(df: pd.DataFrame) -> tuple[list[LinhaFaturamento], list[LinhaFaturamento]]:
     positivos: list[LinhaFaturamento] = []
     negativos: list[LinhaFaturamento] = []
     secao: str | None = None
+    col_imp = _coluna_impactos(df)
 
     for _, row in df.iterrows():
-        rotulo = row.iloc[COL_LAB_DIR] if COL_LAB_DIR < len(row) else None
+        rotulo = row.iloc[col_imp] if col_imp < len(row) else None
         if rotulo is not None and not (isinstance(rotulo, float) and pd.isna(rotulo)):
             texto = str(rotulo).strip().lower()
             if texto == "impactos positivos":
@@ -259,12 +466,11 @@ def _extrair_impactos(df: pd.DataFrame) -> tuple[list[LinhaFaturamento], list[Li
         if secao is None:
             continue
 
-        linha = _linha(row, COL_LAB_DIR, ler_ms=False)
+        linha = _linha(row, col_imp, ler_ms=False)
         if linha is None:
             continue
-        # Coluna extra = incremento absoluto de receita
-        if COL_LAB_DIR + 4 < len(row):
-            inc = _num(row.iloc[COL_LAB_DIR + 4])
+        if col_imp + 4 < len(row):
+            inc = _num(row.iloc[col_imp + 4])
             if inc is not None:
                 linha = LinhaFaturamento(
                     nome=linha.nome,
@@ -282,7 +488,7 @@ def _extrair_impactos(df: pd.DataFrame) -> tuple[list[LinhaFaturamento], list[Li
 
 
 def _extrair_portfolio_analise(caminho: Path) -> tuple[list[LinhaFaturamento], LinhaFaturamento | None]:
-    sheet = _sheet_por_prefixo(caminho, "analise")
+    sheet = _resolver_aba(caminho, *ABA_ANALISE_CANDIDATOS)
     if not sheet:
         return [], None
 
@@ -310,30 +516,30 @@ def _extrair_portfolio_analise(caminho: Path) -> tuple[list[LinhaFaturamento], L
             if linha:
                 total = linha
             break
-        if "danone" in texto.lower():
-            fat25 = _num(row.iloc[1]) if len(row) > 1 else None
-            fat26 = _num(row.iloc[2]) if len(row) > 2 else None
-            cresc = _pct(row.iloc[3]) if len(row) > 3 else None
-            ms = _market_share_na_linha(row, col_ms)
-            if fat25 is None and fat26 is None:
-                continue
-            if fat25 and fat26 and fat25 != 0 and cresc is None:
-                cresc = (fat26 - fat25) / fat25
-            portfolio.append(
-                LinhaFaturamento(
-                    nome=texto,
-                    fat_2025=fat25 or 0.0,
-                    fat_2026=fat26 or 0.0,
-                    crescimento=cresc,
-                    market_share=ms,
-                )
+        fat25 = _num(row.iloc[1]) if len(row) > 1 else None
+        fat26 = _num(row.iloc[2]) if len(row) > 2 else None
+        cresc = _pct(row.iloc[3]) if len(row) > 3 else None
+        ms = _market_share_na_linha(row, col_ms)
+        if fat25 is None and fat26 is None:
+            continue
+        if fat25 and fat26 and fat25 != 0 and cresc is None:
+            cresc = (fat26 - fat25) / fat25
+        portfolio.append(
+            LinhaFaturamento(
+                nome=texto,
+                fat_2025=fat25 or 0.0,
+                fat_2026=fat26 or 0.0,
+                crescimento=cresc,
+                market_share=ms,
             )
+        )
 
     return portfolio, total
 
 
-def _extrair_total_ntr_analise(caminho: Path) -> LinhaFaturamento | None:
-    sheet = _sheet_por_prefixo(caminho, "analise")
+def _extrair_mercado_ntr_analise(caminho: Path) -> LinhaFaturamento | None:
+    """Setor NAO_MEDICAMENTO_NTR — mercado total NTR (contexto de share)."""
+    sheet = _resolver_aba(caminho, *ABA_ANALISE_CANDIDATOS)
     if not sheet:
         return None
     df = pd.read_excel(caminho, sheet_name=sheet, header=None)
@@ -341,16 +547,16 @@ def _extrair_total_ntr_analise(caminho: Path) -> LinhaFaturamento | None:
         lab = row.iloc[0]
         if lab is not None and str(lab).strip().upper() == "NAO_MEDICAMENTO_NTR":
             fat25 = _num(row.iloc[1])
-            fat26 = _num(row.iloc[3])
-            uni25 = _num(row.iloc[2])
-            uni26 = _num(row.iloc[4])
+            fat26 = _num(row.iloc[3]) if len(row) > 3 else _num(row.iloc[2])
+            uni25 = _num(row.iloc[2]) if len(row) > 2 else None
+            uni26 = _num(row.iloc[4]) if len(row) > 4 else None
             cresc = _pct(row.iloc[5]) if len(row) > 5 else None
             if fat25 and fat26 and fat25 != 0 and cresc is None:
                 cresc = (fat26 - fat25) / fat25
             ms = _market_share(row.iloc[7]) if len(row) > 7 else None
             if fat25 or fat26:
                 return LinhaFaturamento(
-                    nome="Danone NTR",
+                    nome="Mercado NTR",
                     fat_2025=fat25 or 0,
                     fat_2026=fat26 or 0,
                     crescimento=cresc,
@@ -362,8 +568,11 @@ def _extrair_total_ntr_analise(caminho: Path) -> LinhaFaturamento | None:
 
 
 def _extrair_regioes(caminho: Path) -> tuple[list[LinhaFaturamento], LinhaFaturamento | None]:
+    sheet = _resolver_aba(caminho, *ABA_REGIAO_CANDIDATOS)
+    if not sheet:
+        return [], None
     try:
-        df = pd.read_excel(caminho, sheet_name=SHEET_REGIAO, header=None)
+        df = pd.read_excel(caminho, sheet_name=sheet, header=None)
     except (ValueError, FileNotFoundError):
         return [], None
 
@@ -373,17 +582,18 @@ def _extrair_regioes(caminho: Path) -> tuple[list[LinhaFaturamento], LinhaFatura
         linha = _linha(row, 0, ler_ms=True)
         if linha is None:
             continue
-        if linha.nome.lower().startswith("total geral"):
+        chave = _texto_chave(linha.nome)
+        if chave.startswith("total geral"):
             total = linha
-        elif linha.nome.lower() not in ("regiao|uf", "região|uf"):
+        elif chave not in ("regiao|uf", "regiao", "laboratorio"):
             regioes.append(linha)
     return regioes, total
 
 
 def _extrair_ranking_market_share(caminho: Path) -> list[LinhaFaturamento]:
-    """Ranking com Market Share% da aba Ranking. (layout coluna 1 = laboratório)."""
-    xl = pd.ExcelFile(caminho)
-    sheet = next((s for s in xl.sheet_names if s.strip().lower() == "ranking."), None)
+    """Ranking com MS% — aba 'Ranking.' (legado)."""
+    mapa = _mapa_abas(caminho)
+    sheet = mapa.get("ranking.")
     if not sheet:
         return []
 
@@ -394,7 +604,11 @@ def _extrair_ranking_market_share(caminho: Path) -> list[LinhaFaturamento]:
         if linha is None:
             continue
         nome = linha.nome.lower()
-        if nome in ("total", "laboratorio", "laboratório", "ranking"):
+        if nome in ("laboratorio", "laboratório", "ranking"):
+            continue
+        if nome.startswith("total") or nome.startswith("impactos"):
+            break
+        if not eh_laboratorio(linha.nome):
             continue
         if linha.fat_2026 < FATURAMENTO_MINIMO_LAB:
             continue
@@ -403,31 +617,106 @@ def _extrair_ranking_market_share(caminho: Path) -> list[LinhaFaturamento]:
     return saida
 
 
-def _extrair_total_abrafad(caminho: Path) -> LinhaFaturamento | None:
-    """Total Geral da aba Ranking ABRAFAD."""
-    try:
-        df = pd.read_excel(caminho, sheet_name=SHEET_ABRAFAD, header=None)
-    except (ValueError, FileNotFoundError):
-        return None
-
-    for _, row in df.iterrows():
-        linha = _linha(row, 0, ler_ms=True)
-        if linha and linha.nome.lower().startswith("total geral"):
-            return LinhaFaturamento(
-                nome="ABRAFAD",
+def _extrair_produtos_ranking(
+    positivos: list[LinhaFaturamento],
+    negativos: list[LinhaFaturamento],
+    total_fat_2026: float | None,
+) -> list[LinhaFaturamento]:
+    if not total_fat_2026:
+        return []
+    vistos: set[str] = set()
+    saida: list[LinhaFaturamento] = []
+    for linha in positivos + negativos:
+        if eh_laboratorio(linha.nome):
+            continue
+        chave = linha.nome.strip().upper()
+        if chave in vistos or linha.fat_2026 < FATURAMENTO_MINIMO_LAB:
+            continue
+        vistos.add(chave)
+        saida.append(
+            LinhaFaturamento(
+                nome=linha.nome.strip(),
                 fat_2025=linha.fat_2025,
                 fat_2026=linha.fat_2026,
                 crescimento=linha.crescimento,
-                market_share=linha.market_share,
+                market_share=linha.fat_2026 / total_fat_2026,
+                delta_abs=linha.delta_abs,
             )
-    return None
+        )
+    saida.sort(key=lambda x: x.fat_2026, reverse=True)
+    return saida
+
+
+def _resolver_sheet_abrafad(caminho: Path) -> str | None:
+    mapa = _mapa_abas(caminho)
+    if "ranking abrafad." in mapa:
+        return mapa["ranking abrafad."]
+    if "ranking abrafad" in mapa:
+        return mapa["ranking abrafad"]
+    return _resolver_aba(caminho, prefixos=ABA_ABRAFAD_PREFIXOS)
+
+
+def _extrair_linhas_abrafad(
+    caminho: Path,
+    *,
+    minimo_fat: float = 0,
+) -> list[LinhaFaturamento]:
+    sheet = _resolver_sheet_abrafad(caminho)
+    if not sheet:
+        return []
+    try:
+        df = pd.read_excel(caminho, sheet_name=sheet, header=None)
+    except (ValueError, FileNotFoundError):
+        return []
+
+    saida: list[LinhaFaturamento] = []
+    for _, row in df.iterrows():
+        linha = _linha(row, 0, ler_ms=True)
+        if linha is None:
+            continue
+        if linha.nome.lower().startswith("total"):
+            continue
+        if linha.fat_2026 < minimo_fat:
+            continue
+        saida.append(linha)
+    return saida
+
+
+def _extrair_total_abrafad(caminho: Path) -> LinhaFaturamento | None:
+    linhas = _extrair_linhas_abrafad(caminho)
+    if not linhas:
+        return None
+
+    fat25 = sum(l.fat_2025 for l in linhas)
+    fat26 = sum(l.fat_2026 for l in linhas)
+    if not fat25 and not fat26:
+        return None
+
+    cresc = (fat26 - fat25) / fat25 if fat25 else None
+    return LinhaFaturamento(
+        nome="ABRAFAD",
+        fat_2025=fat25,
+        fat_2026=fat26,
+        crescimento=cresc,
+        market_share=1.0,
+    )
 
 
 def _linha_concorrentes_agregado(concorrentes: list[LinhaFaturamento]) -> LinhaFaturamento | None:
-    for c in concorrentes:
-        if _texto_chave(c.nome) == "concorrentes":
-            return c
-    return concorrentes[0] if concorrentes else None
+    fat25 = sum(c.fat_2025 for c in concorrentes)
+    fat26 = sum(c.fat_2026 for c in concorrentes)
+    if not fat25 and not fat26:
+        for c in concorrentes:
+            if _texto_chave(c.nome) == "concorrentes":
+                return c
+        return concorrentes[0] if concorrentes else None
+    cresc = (fat26 - fat25) / fat25 if fat25 else None
+    return LinhaFaturamento(
+        nome="CONCORRENTES",
+        fat_2025=fat25,
+        fat_2026=fat26,
+        crescimento=cresc,
+    )
 
 
 def _extrair_danone_canal_abrafad(
@@ -435,16 +724,17 @@ def _extrair_danone_canal_abrafad(
     bandeiras: list[LinhaFaturamento],
     total_abrafad: LinhaFaturamento | None,
 ) -> LinhaFaturamento | None:
-    """Faturamento e crescimento da Danone nas bandeiras do canal ABRAFAD (aba Dados)."""
     if dados is None or dados.empty or "Laboratorio" not in dados.columns:
         return None
 
     nomes_bandeiras = {b.nome.upper() for b in bandeiras}
     mask_lab = dados["Laboratorio"].astype(str).str.upper().str.contains("DANONE", na=False)
-    if nomes_bandeiras:
+    if nomes_bandeiras and "Bandeira" in dados.columns:
         mask_band = dados["Bandeira"].astype(str).str.upper().isin(nomes_bandeiras)
-    else:
+    elif "Bandeira" in dados.columns:
         mask_band = ~dados["Bandeira"].astype(str).str.upper().eq("CONCORRENTES")
+    else:
+        return None
     sub = dados[mask_lab & mask_band]
     fat25 = float(sub["fat_2025"].sum())
     fat26 = float(sub["fat_2026"].sum())
@@ -462,33 +752,105 @@ def _extrair_danone_canal_abrafad(
     )
 
 
+def _extrair_concorrentes_ranking(df: pd.DataFrame, col_lab: int) -> list[LinhaFaturamento]:
+    saida: list[LinhaFaturamento] = []
+    for _, row in df.iterrows():
+        linha = _linha(row, col_lab, ler_ms=True)
+        if linha is None:
+            continue
+        if _texto_chave(linha.nome) == "concorrente":
+            saida.append(linha)
+        if linha.nome.lower().startswith("total"):
+            break
+    return saida
+
+
+def _extrair_concorrentes(caminho: Path, df_ranking: pd.DataFrame | None, col_lab: int) -> list[LinhaFaturamento]:
+    sheet = _resolver_aba(caminho, *ABA_CONCORRENTE_CANDIDATOS)
+    if sheet:
+        try:
+            df = pd.read_excel(caminho, sheet_name=sheet, header=None)
+        except (ValueError, FileNotFoundError):
+            df = None
+        if df is not None:
+            saida: list[LinhaFaturamento] = []
+            for _, row in df.iterrows():
+                nome_cel = row.iloc[0] if len(row) else None
+                if nome_cel is None or (isinstance(nome_cel, float) and pd.isna(nome_cel)):
+                    continue
+                nome = str(nome_cel).strip()
+                if nome.lower() in ("concorrentes", "laboratorio", "laboratório", "setor_nec_aberto"):
+                    fat25 = _num(row.iloc[1]) if len(row) > 1 else None
+                    fat26 = _num(row.iloc[2]) if len(row) > 2 else None
+                    cresc = _pct(row.iloc[3]) if len(row) > 3 else None
+                    ms = _market_share(row.iloc[4]) if len(row) > 4 else None
+                    if fat25 or fat26:
+                        saida.append(
+                            LinhaFaturamento(
+                                nome="CONCORRENTES",
+                                fat_2025=fat25 or 0.0,
+                                fat_2026=fat26 or 0.0,
+                                crescimento=cresc,
+                                market_share=ms,
+                            )
+                        )
+                    continue
+                linha = _linha(row, 0, ler_ms=True)
+                if linha is None:
+                    continue
+                if linha.nome.lower().startswith("total geral"):
+                    continue
+                saida.append(linha)
+            if saida:
+                return saida
+
+    if df_ranking is not None:
+        return _extrair_concorrentes_ranking(df_ranking, col_lab)
+    return []
+
+
+def _agregar_laboratorios_dados(dados: pd.DataFrame) -> list[LinhaFaturamento]:
+    if dados.empty or "Laboratorio" not in dados.columns:
+        return []
+    agg = (
+        dados.groupby("Laboratorio", as_index=False)
+        .agg(fat_2025=("fat_2025", "sum"), fat_2026=("fat_2026", "sum"))
+    )
+    saida: list[LinhaFaturamento] = []
+    for _, row in agg.iterrows():
+        fat25, fat26 = float(row["fat_2025"]), float(row["fat_2026"])
+        cresc = (fat26 - fat25) / fat25 if fat25 else None
+        saida.append(
+            LinhaFaturamento(
+                nome=str(row["Laboratorio"]).strip(),
+                fat_2025=fat25,
+                fat_2026=fat26,
+                crescimento=cresc,
+            )
+        )
+    saida.sort(key=lambda x: x.fat_2026, reverse=True)
+    return saida
+
+
 def cards_panorama_visao_geral(
     estudo: EstudoDanone,
     caminho: Path | None = None,
 ) -> list[CardPanoramaVisao]:
-    """
-    Três ângulos da Danone para a Visão Geral:
-    1) Faturamento Brasil (NTR)  2) Danone no canal ABRAFAD  3) Danone vs concorrentes.
-    """
+    """Cards da Visão Geral — adapta ao formato disponível na planilha."""
     caminho_leitura = _resolver_leitura_planilha(Path(caminho or PLANILHA_FONTE))
     danone = estudo.total_ntr
-    total_abrafad = _extrair_total_abrafad(caminho_leitura)
-    danone_abrafad = _extrair_danone_canal_abrafad(
-        estudo.dados_detalhe,
-        estudo.bandeiras,
-        total_abrafad,
-    )
-    conc = _linha_concorrentes_agregado(estudo.concorrentes)
-
+    mercado = estudo.total_mercado_ntr
     saida: list[CardPanoramaVisao] = []
 
     if danone:
         ms_br = danone.market_share
+        if ms_br is None and mercado and mercado.fat_2026:
+            ms_br = danone.fat_2026 / mercado.fat_2026
         saida.append(
             CardPanoramaVisao(
-                titulo="DANONE BRASIL",
-                subtitulo="Faturamento NTR total no Brasil",
-                ms_rotulo="Participação no mercado NTR",
+                titulo=f"{estudo.metadados.cliente.upper()} — TOTAL",
+                subtitulo="Faturamento total do estudo",
+                ms_rotulo="Participação no mercado NTR" if mercado else "Participação de mercado",
                 fat_2025=danone.fat_2025,
                 fat_2026=danone.fat_2026,
                 crescimento=danone.crescimento,
@@ -497,27 +859,47 @@ def cards_panorama_visao_geral(
             )
         )
 
-    if danone_abrafad:
-        ms_canal = danone_abrafad.market_share
+    if estudo.metadados.tem_abrafad:
+        total_abrafad = _extrair_total_abrafad(caminho_leitura)
+        danone_abrafad = _extrair_danone_canal_abrafad(
+            estudo.dados_detalhe,
+            estudo.bandeiras,
+            total_abrafad,
+        )
+        if danone_abrafad:
+            saida.append(
+                CardPanoramaVisao(
+                    titulo=f"{estudo.metadados.cliente.upper()} · ABRAFAD",
+                    subtitulo="Faturamento no canal farmácias ABRAFAD",
+                    ms_rotulo="Participação no canal ABRAFAD",
+                    fat_2025=danone_abrafad.fat_2025,
+                    fat_2026=danone_abrafad.fat_2026,
+                    crescimento=danone_abrafad.crescimento,
+                    market_share=danone_abrafad.market_share,
+                )
+            )
+    elif estudo.portfolio:
+        maior = max(estudo.portfolio, key=lambda p: p.fat_2026)
         saida.append(
             CardPanoramaVisao(
-                titulo="DANONE · ABRAFAD",
-                subtitulo="Faturamento da Danone no canal farmácias ABRAFAD",
-                ms_rotulo="Participação no canal ABRAFAD",
-                fat_2025=danone_abrafad.fat_2025,
-                fat_2026=danone_abrafad.fat_2026,
-                crescimento=danone_abrafad.crescimento,
-                market_share=ms_canal,
+                titulo=maior.nome.upper(),
+                subtitulo="Maior unidade de negócio no portfólio",
+                ms_rotulo="Participação no portfólio",
+                fat_2025=maior.fat_2025,
+                fat_2026=maior.fat_2026,
+                crescimento=maior.crescimento,
+                market_share=maior.market_share,
             )
         )
 
+    conc = _linha_concorrentes_agregado(estudo.concorrentes)
     if danone and conc:
         total_mercado = danone.fat_2026 + conc.fat_2026
         ms_danone = danone.fat_2026 / total_mercado if total_mercado else None
         saida.append(
             CardPanoramaVisao(
-                titulo="DANONE · CONCORRENTES",
-                subtitulo="Posição da Danone frente ao bloco concorrentes",
+                titulo=f"{estudo.metadados.cliente.upper()} · CONCORRENTES",
+                subtitulo="Posição frente ao bloco concorrentes",
                 ms_rotulo="Participação vs concorrentes",
                 fat_2025=danone.fat_2025,
                 fat_2026=danone.fat_2026,
@@ -533,7 +915,6 @@ def linhas_panorama_visao_geral(
     estudo: EstudoDanone,
     caminho: Path | None = None,
 ) -> list[LinhaFaturamento]:
-    """Compatibilidade — converte cards em linhas para gráficos."""
     return [
         LinhaFaturamento(
             nome=c.titulo,
@@ -547,60 +928,9 @@ def linhas_panorama_visao_geral(
 
 
 def _extrair_bandeiras(caminho: Path) -> list[LinhaFaturamento]:
-    try:
-        df = pd.read_excel(caminho, sheet_name=SHEET_ABRAFAD, header=None)
-    except (ValueError, FileNotFoundError):
-        return []
-
-    bandeiras: list[LinhaFaturamento] = []
-    for _, row in df.iterrows():
-        linha = _linha(row, 0, ler_ms=True)
-        if linha is None:
-            continue
-        if linha.nome.lower().startswith("total geral"):
-            continue
-        if linha.fat_2026 < FATURAMENTO_MINIMO_BANDEIRA:
-            continue
-        bandeiras.append(linha)
+    bandeiras = _extrair_linhas_abrafad(caminho, minimo_fat=FATURAMENTO_MINIMO_BANDEIRA)
     bandeiras.sort(key=lambda x: x.fat_2026, reverse=True)
     return bandeiras
-
-
-def _extrair_concorrentes(caminho: Path) -> list[LinhaFaturamento]:
-    try:
-        df = pd.read_excel(caminho, sheet_name=SHEET_CONCORRENTE, header=None)
-    except (ValueError, FileNotFoundError):
-        return []
-
-    saida: list[LinhaFaturamento] = []
-    for _, row in df.iterrows():
-        nome_cel = row.iloc[0] if len(row) else None
-        if nome_cel is None or (isinstance(nome_cel, float) and pd.isna(nome_cel)):
-            continue
-        nome = str(nome_cel).strip()
-        if nome.lower() in ("concorrentes", "laboratorio", "laboratório", "setor_nec_aberto"):
-            fat25 = _num(row.iloc[1]) if len(row) > 1 else None
-            fat26 = _num(row.iloc[2]) if len(row) > 2 else None
-            cresc = _pct(row.iloc[3]) if len(row) > 3 else None
-            ms = _market_share(row.iloc[4]) if len(row) > 4 else None
-            if fat25 or fat26:
-                saida.append(
-                    LinhaFaturamento(
-                        nome="CONCORRENTES",
-                        fat_2025=fat25 or 0.0,
-                        fat_2026=fat26 or 0.0,
-                        crescimento=cresc,
-                        market_share=ms,
-                    )
-                )
-            continue
-        linha = _linha(row, 0, ler_ms=True)
-        if linha is None:
-            continue
-        if linha.nome.lower().startswith("total geral"):
-            continue
-        saida.append(linha)
-    return saida
 
 
 def _calcular_market_share(linhas: list[LinhaFaturamento]) -> list[LinhaFaturamento]:
@@ -622,16 +952,33 @@ def _calcular_market_share(linhas: list[LinhaFaturamento]) -> list[LinhaFaturame
     ]
 
 
-def _carregar_dados_detalhe(caminho: Path) -> pd.DataFrame:
-    df = pd.read_excel(caminho, sheet_name=SHEET_DADOS)
+def _normalizar_colunas_dados(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
-    rename = {
-        "Mat MAT 04/25 Real CPP": "fat_2025",
-        "Mat MAT 04/26 Real CPP": "fat_2026",
-        "Mat MAT 04/25 Unidades": "unid_2025",
-        "Mat MAT 04/26 Unidades": "unid_2026",
-    }
+    rename: dict[str, str] = {}
+    for col in df.columns:
+        chave = col.lower()
+        if "04/25" in chave and "real" in chave and "cpp" in chave:
+            rename[col] = "fat_2025"
+        elif "04/26" in chave and "real" in chave and "cpp" in chave:
+            rename[col] = "fat_2026"
+        elif "04/25" in chave and "unid" in chave:
+            rename[col] = "unid_2025"
+        elif "04/26" in chave and "unid" in chave:
+            rename[col] = "unid_2026"
     df = df.rename(columns=rename)
+    return df
+
+
+def _carregar_dados_detalhe(caminho: Path) -> pd.DataFrame:
+    sheet = _resolver_aba(caminho, *ABA_DADOS_CANDIDATOS)
+    if not sheet:
+        return pd.DataFrame()
+    df = pd.read_excel(caminho, sheet_name=sheet)
+    df = _normalizar_colunas_dados(df)
+    for col in ("fat_2025", "fat_2026"):
+        if col not in df.columns:
+            df[col] = 0.0
     df["delta_fat"] = df["fat_2026"] - df["fat_2025"]
     df["crescimento"] = df.apply(
         lambda r: r["delta_fat"] / r["fat_2025"] if r["fat_2025"] else None,
@@ -641,15 +988,19 @@ def _carregar_dados_detalhe(caminho: Path) -> pd.DataFrame:
 
 
 def _agregar_produtos(dados: pd.DataFrame) -> pd.DataFrame:
+    if dados.empty or "Produto" not in dados.columns:
+        return pd.DataFrame(columns=["Produto", "fat_2025", "fat_2026", "crescimento"])
     agg = (
         dados.groupby("Produto", as_index=False)
         .agg(
             fat_2025=("fat_2025", "sum"),
             fat_2026=("fat_2026", "sum"),
-            unid_2025=("unid_2025", "sum"),
-            unid_2026=("unid_2026", "sum"),
+            unid_2025=("unid_2025", "sum") if "unid_2025" in dados.columns else ("fat_2025", "first"),
+            unid_2026=("unid_2026", "sum") if "unid_2026" in dados.columns else ("fat_2026", "first"),
         )
     )
+    if "unid_2025" not in dados.columns:
+        agg = agg.drop(columns=[c for c in ("unid_2025", "unid_2026") if c in agg.columns], errors="ignore")
     agg["delta_fat"] = agg["fat_2026"] - agg["fat_2025"]
     agg["crescimento"] = agg.apply(
         lambda r: r["delta_fat"] / r["fat_2025"] if r["fat_2025"] else None,
@@ -659,7 +1010,6 @@ def _agregar_produtos(dados: pd.DataFrame) -> pd.DataFrame:
 
 
 def ler_market_share_portfolio(caminho: Path | None = None) -> dict[str, float]:
-    """Mapa nome da unidade (upper) → market share (0–1). Leitura direta, sem cache Streamlit."""
     caminho = _resolver_leitura_planilha(Path(caminho or PLANILHA_FONTE))
     portfolio, _ = _extrair_portfolio_analise(caminho)
     return {
@@ -675,33 +1025,85 @@ def carregar_estudo(caminho: Path | None = None) -> EstudoDanone:
         raise FileNotFoundError(f"Planilha não encontrada: {caminho}")
 
     caminho = _resolver_leitura_planilha(caminho)
+    metadados = _detectar_metadados(caminho)
+    periodo_label = _inferir_periodo_label(caminho)
 
-    df_ranking = pd.read_excel(caminho, sheet_name=SHEET_RANKING, header=None)
+    sheet_ranking = _resolver_aba(caminho, *ABA_RANKING_CANDIDATOS)
+    df_ranking = (
+        pd.read_excel(caminho, sheet_name=sheet_ranking, header=None)
+        if sheet_ranking
+        else pd.DataFrame()
+    )
 
-    top3 = _extrair_top_por_rank(df_ranking)
+    col_lab = _detectar_col_lab_ranking(df_ranking) if not df_ranking.empty else COL_LAB_ESQ
+
+    top3 = _extrair_top_por_rank(df_ranking) if not df_ranking.empty else []
     ranking_ms = _extrair_ranking_market_share(caminho)
-    ranking = ranking_ms if ranking_ms else _extrair_bloco_ranking(df_ranking, COL_LAB_ESQ)
+
+    ranking = ranking_ms if ranking_ms else _extrair_bloco_ranking(df_ranking, col_lab, apenas_labs=True)
+    if len(ranking) < 3:
+        ranking_ranking = _extrair_ranking_todas_linhas(df_ranking, col_lab) if not df_ranking.empty else []
+        if len(ranking_ranking) > len(ranking):
+            ranking = ranking_ranking
+
+    dados_detalhe = _carregar_dados_detalhe(caminho)
+    labs_dados = _agregar_laboratorios_dados(dados_detalhe)
+    if len(ranking) < len(labs_dados):
+        ranking = labs_dados
+
     ranking = _calcular_market_share(ranking)
-    top3 = _calcular_market_share(top3)
+
+    concorrentes = _extrair_concorrentes(caminho, df_ranking if not df_ranking.empty else None, col_lab)
+    conc_agg = _linha_concorrentes_agregado(concorrentes)
+
+    concorrentes_no_top = sum(1 for l in top3 if "CONCORRENTE" in l.nome.upper())
+    if metadados.formato == "novo" or concorrentes_no_top > 1:
+        top3 = labs_dados[:3]
+        if conc_agg and conc_agg.fat_2026 >= (top3[0].fat_2026 if top3 else 0):
+            top3 = [conc_agg] + labs_dados[:2]
+        elif conc_agg:
+            top3 = (top3 + [conc_agg])[:3]
+    top3 = _calcular_market_share(top3) if top3 else ranking[:3]
+
     portfolio, total_portfolio = _extrair_portfolio_analise(caminho)
-    total_ntr = _extrair_total_ntr_analise(caminho) or total_portfolio
-    positivos, negativos = _extrair_impactos(df_ranking)
+    total_mercado_ntr = _extrair_mercado_ntr_analise(caminho)
+
+    total_ntr = total_portfolio
+    if total_ntr and total_mercado_ntr and total_mercado_ntr.fat_2026:
+        total_ntr = LinhaFaturamento(
+            nome=total_ntr.nome,
+            fat_2025=total_ntr.fat_2025,
+            fat_2026=total_ntr.fat_2026,
+            crescimento=total_ntr.crescimento,
+            market_share=total_ntr.fat_2026 / total_mercado_ntr.fat_2026,
+            unidades_2025=total_ntr.unidades_2025,
+            unidades_2026=total_ntr.unidades_2026,
+        )
+
+    positivos, negativos = _extrair_impactos(df_ranking) if not df_ranking.empty else ([], [])
+    produtos_ranking = _extrair_produtos_ranking(
+        positivos,
+        negativos,
+        total_ntr.fat_2026 if total_ntr else None,
+    )
     positivos.sort(key=lambda x: x.crescimento or 0, reverse=True)
     negativos.sort(key=lambda x: x.crescimento or 0)
+
     regioes, total_regioes = _extrair_regioes(caminho)
     regioes = _calcular_market_share(regioes)
     bandeiras = _calcular_market_share(_extrair_bandeiras(caminho))
-    concorrentes = _extrair_concorrentes(caminho)
 
-    dados_detalhe = _carregar_dados_detalhe(caminho)
     produtos = _agregar_produtos(dados_detalhe)
 
     return EstudoDanone(
-        periodo_label=PERIODO_LABEL,
+        periodo_label=periodo_label,
+        metadados=metadados,
         total_ntr=total_ntr,
+        total_mercado_ntr=total_mercado_ntr,
         portfolio=portfolio,
         laboratorios_top3=top3,
         laboratorios_ranking=ranking,
+        produtos_ranking=produtos_ranking,
         impactos_positivos=positivos,
         impactos_negativos=negativos,
         regioes=regioes,
@@ -713,7 +1115,6 @@ def carregar_estudo(caminho: Path | None = None) -> EstudoDanone:
     )
 
 
-# Alias legado
 carregar_dados = carregar_estudo
 
 
@@ -721,9 +1122,6 @@ def copiar_planilha_entrega(
     destino: Path,
     origem: Path | None = None,
 ) -> Path:
-    """Copia a planilha original para pasta de entrega (sem modificá-la)."""
-    import shutil
-
     origem = Path(origem or PLANILHA_FONTE)
     destino = Path(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)

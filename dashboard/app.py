@@ -1,5 +1,5 @@
 """
-Dashboard Comercial Danone NTR — ESTUDO_DANONE_MAT_MAIO (read-only).
+Dashboard Comercial — leitura dinâmica de planilhas em dados/ (read-only).
 
 Uso:
   streamlit run dashboard/app.py
@@ -7,6 +7,7 @@ Uso:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -25,11 +26,13 @@ from danone import (
     fmt_pct,
     fmt_produto_curto,
     cards_panorama_visao_geral,
+    listar_planilhas,
     resolver_planilha,
 )
 from danone.models import LinhaFaturamento
+from danone.reader import inferir_laboratorio
 
-CACHE_ESTUDO_VERSAO = 5
+CACHE_ESTUDO_VERSAO = 9
 from dashboard.auth import render_botao_sair, verificar_acesso
 from dashboard.theme import (
     BOX_CARD,
@@ -50,15 +53,37 @@ st.set_page_config(
 )
 
 def _inject_theme() -> None:
-    if st.session_state.get('_theme_css'):
+    if st.session_state.get("_theme_css_v") == 2:
         return
     st.markdown(CSS, unsafe_allow_html=True)
-    st.session_state['_theme_css'] = True
+    st.session_state["_theme_css_v"] = 2
 
 
-@st.cache_data(show_spinner="Carregando estudo Danone…")
+@st.cache_data(show_spinner="Carregando estudo…")
 def _load(path: str, arquivo_mtime: float, versao: int = CACHE_ESTUDO_VERSAO):
     return carregar_estudo(Path(path))
+
+
+def _rotulos_periodo(periodo_label: str) -> tuple[str, str]:
+    """Extrai rótulos curtos dos períodos (ex.: Abr/25, Abr/26)."""
+    partes = [p.strip() for p in periodo_label.replace("·", " ").split("vs")]
+    rotulos: list[str] = []
+    for parte in partes:
+        m = re.search(r"([A-Za-z]{3}/\d{2,4})", parte)
+        rotulos.append(m.group(1) if m else parte.replace("MAT", "").strip() or "?")
+    if len(rotulos) >= 2:
+        return rotulos[0], rotulos[1]
+    if len(rotulos) == 1:
+        return rotulos[0], rotulos[0]
+    return "Período base", "Período atual"
+
+
+def _secoes_disponiveis(estudo) -> list[str]:
+    secoes = ["Visão Geral", "Market Share", "Regional", "Produtos"]
+    if estudo.metadados.tem_bandeiras and estudo.bandeiras:
+        secoes.append("Bandeiras")
+    secoes.extend(["Concorrência", "Impactos", "Explorador"])
+    return secoes
 
 
 @st.cache_data(show_spinner=False)
@@ -70,6 +95,106 @@ def _bytes_planilha_excel(path: str, arquivo_mtime: float, versao: int = CACHE_E
 
 def _seta(positivo: bool) -> str:
     return "↑" if positivo else "↓"
+
+
+def _titulo_card_duas_linhas(nome: str) -> str:
+    """Separa entidades compostas (ex.: DANONE · ABRAFAD) em linhas distintas."""
+    if " · " in nome:
+        parte, detalhe = nome.split(" · ", 1)
+        return (
+            f'<div style="display:block;line-height:1.35;">'
+            f'<span style="display:block;">{parte.strip()}</span>'
+            f'<span style="display:block;font-size:0.82em;font-weight:600;color:#475569;'
+            f'margin-top:0.2rem;">{detalhe.strip()}</span>'
+            f"</div>"
+        )
+    if " " in nome.strip():
+        parte, resto = nome.strip().split(" ", 1)
+        return (
+            f'<div style="display:block;line-height:1.35;">'
+            f'<span style="display:block;">{parte}</span>'
+            f'<span style="display:block;font-size:0.82em;font-weight:600;color:#475569;'
+            f'margin-top:0.2rem;">{resto}</span>'
+            f"</div>"
+        )
+    return nome
+
+
+def _rotulo_grafico_curto(texto: str) -> str:
+    """Rótulos curtos de uma linha — evita sobreposição no eixo."""
+    mapa = {
+        "DANONE BRASIL": "Brasil",
+        "DANONE · ABRAFAD": "ABRAFAD",
+        "DANONE · CONCORRENTES": "Concorrentes",
+    }
+    texto = str(texto).strip()
+    return mapa.get(texto, texto)
+
+
+def _ms_rotulo_html(rotulo: str) -> str:
+    """Quebra rótulo de participação em linhas para caber na caixinha."""
+    rotulo = rotulo.strip()
+    if rotulo.lower().startswith("participação "):
+        resto = rotulo[len("Participação ") :]
+        return f"Participação<br>{resto}"
+    return rotulo.replace(" ", "<br>", 1) if len(rotulo) > 18 else rotulo
+
+
+def _df_market_share_completo(estudo) -> pd.DataFrame:
+    """Tabela unificada com colunas Laboratório e Produto separadas."""
+    linhas: list[dict] = []
+    for lab in estudo.laboratorios_ranking:
+        if not lab.market_share:
+            continue
+        linhas.append({
+            "Laboratório": lab.nome.strip(),
+            "Produto": "",
+            "market_share": lab.market_share,
+            "fat_2026": lab.fat_2026,
+            "crescimento": lab.crescimento,
+        })
+    for prod in estudo.produtos_ranking:
+        if not prod.market_share:
+            continue
+        linhas.append({
+            "Laboratório": inferir_laboratorio(prod.nome),
+            "Produto": fmt_produto_curto(prod.nome),
+            "market_share": prod.market_share,
+            "fat_2026": prod.fat_2026,
+            "crescimento": prod.crescimento,
+        })
+    return pd.DataFrame(linhas)
+
+
+def _tabela_laboratorios_ms(estudo) -> pd.DataFrame:
+    linhas = [{
+        "Laboratório": lab.nome.strip(),
+        "Market Share %": lab.market_share,
+        "Faturamento Abr/26": lab.fat_2026,
+        "Crescimento YoY": lab.crescimento,
+    } for lab in estudo.laboratorios_ranking if lab.market_share]
+    return pd.DataFrame(linhas)
+
+
+def _tabela_produtos_ms(estudo) -> pd.DataFrame:
+    linhas = [{
+        "Laboratório": inferir_laboratorio(prod.nome),
+        "Produto": fmt_produto_curto(prod.nome),
+        "Market Share %": prod.market_share,
+        "Faturamento Abr/26": prod.fat_2026,
+        "Crescimento YoY": prod.crescimento,
+    } for prod in estudo.produtos_ranking if prod.market_share]
+    return pd.DataFrame(linhas)
+
+
+def _formatar_tabela_ms(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    out["Market Share %"] = out["Market Share %"].map(fmt_ms)
+    out["Faturamento Abr/26"] = out["Faturamento Abr/26"].map(lambda v: fmt_moeda(v, True))
+    out["Crescimento YoY"] = out["Crescimento YoY"].map(fmt_pct)
+    return out
 
 
 def _nome_laboratorio_top3(nome: str) -> str:
@@ -140,11 +265,12 @@ def _kpi_card(
     )
 
 
-def _kpi_row_html(total) -> str:
+def _kpi_row_html(total, periodo_label: str = "") -> str:
     pos = (total.crescimento or 0) >= 0
+    per_base, per_atual = _rotulos_periodo(periodo_label)
     cards = [
-        _kpi_card("Faturamento Abr/25", fmt_moeda(total.fat_2025, True), "Base comparativa"),
-        _kpi_card("Faturamento Abr/26", fmt_moeda(total.fat_2026, True), "Período atual"),
+        _kpi_card(f"Faturamento {per_base}", fmt_moeda(total.fat_2025, True), "Base comparativa"),
+        _kpi_card(f"Faturamento {per_atual}", fmt_moeda(total.fat_2026, True), "Período atual"),
         _kpi_card(
             "Crescimento YoY",
             fmt_pct(total.crescimento),
@@ -158,7 +284,7 @@ def _kpi_row_html(total) -> str:
         cresc_u = (total.unidades_2026 - total.unidades_2025) / total.unidades_2025
         cards.append(
             _kpi_card(
-                "Unidades Abr/26",
+                f"Unidades {per_atual}",
                 f"{total.unidades_2026:,.0f}".replace(",", "."),
                 fmt_pct(cresc_u),
                 cresc_u >= 0,
@@ -192,24 +318,33 @@ def _portfolio_card(
     ms_pct = (market_share or 0) * 100
     ms_largura = min(max(ms_pct, 0), 100)
     ms_texto = fmt_ms(market_share) if market_share is not None else "—"
+    ms_rotulo_html = _ms_rotulo_html(ms_rotulo)
     ms_bloco = (
-        f'<div style="margin-top:0.75rem;padding:0.7rem 0.85rem;background:#F0F7FC;'
-        f'border-radius:10px;border:1px solid #D4E8F4;">'
-        f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;">'
-        f'<span style="font-size:0.68rem;font-weight:600;color:#64748B;text-transform:uppercase;'
-        f'letter-spacing:0.06em;">{ms_rotulo}</span>'
-        f'<span style="font-size:1.08rem;font-weight:700;color:#1A2B4A;white-space:nowrap;">'
-        f"{ms_texto}</span></div>"
-        f'<div style="margin-top:0.45rem;height:6px;background:#E2E8F0;border-radius:999px;overflow:hidden;">'
-        f'<div style="width:{ms_largura:.1f}%;height:100%;background:linear-gradient(90deg,#2E86AB,#5BA4C9);'
-        f'border-radius:999px;"></div></div></div>'
+        f'<div style="margin-top:0.75rem;width:100%;max-width:100%;min-width:0;'
+        f'padding:0.85rem 0.95rem;background:#F0F7FC;border-radius:10px;'
+        f'border:1px solid #D4E8F4;box-sizing:border-box;overflow:hidden;">'
+        f'<div style="display:block;width:100%;font-size:0.62rem;font-weight:600;'
+        f'color:#64748B;text-transform:uppercase;letter-spacing:0.04em;line-height:1.55;">'
+        f"{ms_rotulo_html}</div>"
+        f'<div style="display:block;width:100%;margin-top:0.45rem;font-size:0.98rem;'
+        f'font-weight:700;color:#1A2B4A;line-height:1.25;text-align:left;">'
+        f"{ms_texto}</div>"
+        f'<div style="display:block;width:100%;margin-top:0.5rem;height:6px;'
+        f'background:#E2E8F0;border-radius:999px;overflow:hidden;">'
+        f'<div style="width:{ms_largura:.1f}%;max-width:100%;height:100%;'
+        f'background:linear-gradient(90deg,#2E86AB,#5BA4C9);border-radius:999px;">'
+        f"</div></div></div>"
     )
+
+    titulo_html = _titulo_card_duas_linhas(nome)
 
     return (
         f'<div style="background:{bg};border:{border};border-radius:14px;'
-        f'padding:1.15rem 1.25rem;margin-bottom:0.85rem;'
+        f'padding:1.15rem 1.1rem;margin-bottom:0.85rem;width:100%;max-width:100%;'
+        f'min-width:0;overflow:hidden;box-sizing:border-box;'
         f'box-shadow:0 4px 16px rgba(26,43,74,0.06);">'
-        f'<div style="font-size:0.9rem;font-weight:700;color:#1A2B4A;text-transform:uppercase;letter-spacing:0.04em;">{nome}</div>'
+        f'<div style="font-size:0.9rem;font-weight:700;color:#1A2B4A;text-transform:uppercase;'
+        f'letter-spacing:0.04em;line-height:1.35;">{titulo_html}</div>'
         + (
             f'<div style="font-size:0.78rem;color:#64748B;margin:0.2rem 0 0.35rem 0;line-height:1.35;">{subtitulo}</div>'
             if subtitulo
@@ -236,12 +371,15 @@ def _bar_comparativo(
     nome_col: str,
     titulo: str,
     horizontal: bool = False,
+    *,
+    rotulo_base: str = "Período base",
+    rotulo_atual: str = "Período atual",
 ) -> go.Figure:
     n = len(df)
     if horizontal:
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            name="Abr/25",
+            name=rotulo_base,
             y=df[nome_col],
             x=df["fat_2025"],
             orientation="h",
@@ -252,7 +390,7 @@ def _bar_comparativo(
             cliponaxis=False,
         ))
         fig.add_trace(go.Bar(
-            name="Abr/26",
+            name=rotulo_atual,
             y=df[nome_col],
             x=df["fat_2026"],
             orientation="h",
@@ -267,25 +405,60 @@ def _bar_comparativo(
         fig.update_xaxes(tickformat=".2s", showgrid=True, gridcolor="#EEF2F6")
         fig.update_yaxes(tickfont=dict(size=11))
     else:
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            name="Abr/25",
-            x=df[nome_col],
-            y=df["fat_2025"],
-            marker=dict(color=CORES["bar_2025"], cornerradius=6),
-            width=0.35,
-        ))
-        fig.add_trace(go.Bar(
-            name="Abr/26",
-            x=df[nome_col],
-            y=df["fat_2026"],
-            marker=dict(color=CORES["bar_2026"], cornerradius=6),
-            width=0.35,
-        ))
-        altura = max(400, 320)
-        aplicar_layout(fig, altura=altura, titulo=titulo, margem_topo=62, margem_base=95)
-        fig.update_yaxes(tickformat=".2s")
-        fig.update_xaxes(tickangle=0, tickfont=dict(size=11))
+        df_plot = df.copy()
+        df_plot["_rotulo"] = df_plot[nome_col].map(_rotulo_grafico_curto)
+        n_barras = len(df_plot)
+        usar_horizontal = n_barras <= 4
+        if usar_horizontal:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name=rotulo_base,
+                y=df_plot["_rotulo"],
+                x=df_plot["fat_2025"],
+                orientation="h",
+                marker=dict(color=CORES["bar_2025"], cornerradius=6),
+                width=0.38,
+            ))
+            fig.add_trace(go.Bar(
+                name=rotulo_atual,
+                y=df_plot["_rotulo"],
+                x=df_plot["fat_2026"],
+                orientation="h",
+                marker=dict(color=CORES["bar_2026"], cornerradius=6),
+                width=0.38,
+            ))
+            altura = max(320, n_barras * 72 + 120)
+            aplicar_layout(
+                fig,
+                altura=altura,
+                titulo=titulo,
+                margem_topo=62,
+                margem_esq=90,
+                margem_dir=30,
+                margem_base=72,
+            )
+            fig.update_xaxes(tickformat=".2s", showgrid=True, gridcolor="#EEF2F6")
+            fig.update_yaxes(tickfont=dict(size=12), automargin=True)
+        else:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name=rotulo_base,
+                x=df_plot["_rotulo"],
+                y=df_plot["fat_2025"],
+                marker=dict(color=CORES["bar_2025"], cornerradius=6),
+                width=0.35,
+            ))
+            fig.add_trace(go.Bar(
+                name=rotulo_atual,
+                x=df_plot["_rotulo"],
+                y=df_plot["fat_2026"],
+                marker=dict(color=CORES["bar_2026"], cornerradius=6),
+                width=0.35,
+            ))
+            altura = max(400, 320)
+            aplicar_layout(fig, altura=altura, titulo=titulo, margem_topo=62, margem_base=90)
+            fig.update_yaxes(tickformat=".2s")
+            fig.update_xaxes(tickangle=-25, tickfont=dict(size=10), automargin=True)
 
     return fig
 
@@ -402,13 +575,13 @@ def _logo_danone_sidebar_bytes(caminho: str) -> tuple[bytes, str]:
     return buf.getvalue(), "image/png"
 
 
-def _render_sidebar_brand() -> None:
+def _render_sidebar_brand(cliente: str = "Comercial") -> None:
     logo = _resolver_logo_danone()
     if logo:
         dados, _ = _logo_danone_sidebar_bytes(str(logo))
         st.sidebar.image(dados, width=72)
-    st.sidebar.markdown("### Danone NTR")
-    st.sidebar.caption("Dashboard Comercial · MAT MAIO")
+    st.sidebar.markdown(f"### {cliente}")
+    st.sidebar.caption("Dashboard Comercial · Estudos dinâmicos")
     st.sidebar.divider()
     st.sidebar.markdown("**Navegação**")
 
@@ -533,7 +706,7 @@ def _grafico_market_share(
         altura=max(360, len(df) * 42 + 100),
         titulo=titulo,
         legenda=False,
-        margem_esq=120 if horizontal else 20,
+        margem_esq=180 if nome_col == "Produto" else 120 if horizontal else 20,
         margem_dir=70,
         margem_base=50,
     )
@@ -547,26 +720,18 @@ def main() -> None:
     if not verificar_acesso():
         return
 
-    _render_sidebar_brand()
-
-    pagina = st.sidebar.radio(
-        "Seção",
-        [
-            "Visão Geral",
-            "Market Share",
-            "Regional",
-            "Produtos",
-            "Bandeiras",
-            "Concorrência",
-            "Impactos",
-            "Explorador",
-        ],
-        label_visibility="collapsed",
-    )
-
+    planilhas = listar_planilhas()
     path = resolver_planilha()
-    with st.sidebar.expander("Fonte de dados", expanded=False):
-        st.caption(f"Pasta: `dados/`")
+
+    with st.sidebar.expander("Fonte de dados", expanded=True):
+        st.caption("Coloque arquivos `.xlsx` na pasta `dados/`")
+        if planilhas:
+            nomes = [p.name for p in planilhas]
+            idx = nomes.index(path.name) if path.name in nomes else 0
+            escolha = st.selectbox("Estudo", nomes, index=idx, key="estudo_selecionado")
+            path = resolver_planilha(escolha)
+        else:
+            st.warning("Nenhuma planilha `.xlsx` em `dados/`.")
         st.code(str(path), language=None)
         planilha_input = st.text_input(
             "Outro caminho (opcional)",
@@ -580,31 +745,53 @@ def main() -> None:
             if candidato.exists():
                 path = candidato.resolve()
             else:
-                st.sidebar.warning("Caminho inválido — usando planilha em dados/.")
-
-    st.sidebar.caption(f"Base: {path.name}")
-    st.sidebar.caption("Leitura automática · Excel intacto")
-    render_botao_sair()
+                st.warning("Caminho inválido — usando planilha em dados/.")
 
     if not path.exists():
+        _render_sidebar_brand()
         st.error(
             f"Planilha não encontrada em **dados/**.\n\n"
-            f"Esperado: `dados/ESTUDO_DANONE_MAT_MAIO1.xlsx`\n\n"
+            f"Adicione um arquivo `.xlsx` (ex.: `DANONE_NOVO_ESTUDO01.xlsx`).\n\n"
             f"Caminho testado: `{path}`"
         )
         st.stop()
 
-    mtime = path.stat().st_mtime if path.exists() else 0.0
-    estudo = _load(str(path), mtime)
+    mtime = path.stat().st_mtime
+    try:
+        estudo = _load(str(path), mtime)
+    except Exception as err:
+        _render_sidebar_brand()
+        st.error(f"Erro ao ler a planilha `{path.name}`: {err}")
+        st.stop()
 
-    _cabecalho_abrafad()
+    _render_sidebar_brand(estudo.metadados.cliente)
+
+    secoes = _secoes_disponiveis(estudo)
+    pagina = st.sidebar.radio("Seção", secoes, label_visibility="collapsed")
+
+    st.sidebar.caption(f"Base: {path.name}")
+    st.sidebar.caption(f"Formato: {estudo.metadados.formato} · {len(estudo.metadados.abas)} abas")
+    if st.sidebar.button(
+        "Atualizar dados",
+        use_container_width=True,
+        help="Recarrega a planilha após salvar alterações no Excel",
+    ):
+        st.cache_data.clear()
+        st.rerun()
+    render_botao_sair()
+
+    per_base, per_atual = _rotulos_periodo(estudo.periodo_label)
+    cliente = estudo.metadados.cliente
+
+    if estudo.metadados.tem_abrafad:
+        _cabecalho_abrafad()
 
     _html(
         f'<div style="background:linear-gradient(135deg,#1A2B4A 0%,#2E86AB 100%);border-radius:16px;'
         f'padding:2rem 2.2rem;color:white;margin-bottom:1.5rem;'
         f'box-shadow:0 8px 32px rgba(26,43,74,0.18);">'
         f'<h1 style="color:white;font-size:1.85rem;margin:0 0 0.4rem 0;font-weight:700;">'
-        f"Dashboard Comercial — Danone NTR</h1>"
+        f"Dashboard Comercial — {cliente}</h1>"
         f'<p style="color:rgba(255,255,255,0.92);margin:0;font-size:1rem;">'
         f"{estudo.periodo_label} · Fonte: {path.name}</p>"
         f"</div>"
@@ -614,9 +801,14 @@ def main() -> None:
     if pagina == "Visão Geral":
         total = estudo.total_ntr
         if total:
-            _html(_kpi_row_html(total))
+            _html(_kpi_row_html(total, estudo.periodo_label))
 
-        _html(_section_title("Danone — Brasil, ABRAFAD e Concorrentes"))
+        titulo_panorama = (
+            f"{cliente} — Canal ABRAFAD e Concorrentes"
+            if estudo.metadados.tem_abrafad
+            else f"{cliente} — Portfólio e Concorrentes"
+        )
+        _html(_section_title(titulo_panorama))
         cards_panorama = cards_panorama_visao_geral(estudo, path)
         if cards_panorama:
             df_p = pd.DataFrame([{
@@ -640,16 +832,23 @@ def main() -> None:
                     ms_rotulo=c.ms_rotulo,
                 )
 
-            col_g, col_t = st.columns([1.65, 1], gap="large")
+            col_g, col_t = st.columns([1.55, 1], gap="large")
             with col_g:
                 with st.container(border=True):
+                    df_graf = df_p.copy()
+                    df_graf["Recorte"] = df_graf["Recorte"].map(_rotulo_grafico_curto)
                     _plot(_bar_comparativo(
-                        df_p,
+                        df_graf,
                         "Recorte",
-                        "Faturamento Danone — Brasil, canal ABRAFAD e vs concorrentes",
+                        f"Faturamento {cliente} — panorama comparativo",
+                        rotulo_base=per_base,
+                        rotulo_atual=per_atual,
                     ))
             with col_t:
-                _html(f'<div style="{BOX_PANEL}">{cards_html}</div>')
+                _html(
+                    f'<div style="{BOX_PANEL}min-width:0;width:100%;max-width:100%;'
+                    f'overflow:hidden;box-sizing:border-box;">{cards_html}</div>'
+                )
 
         _html(_section_title("Top 3 Laboratórios (mercado)"))
         if estudo.laboratorios_top3:
@@ -661,7 +860,13 @@ def main() -> None:
                 "crescimento": l.crescimento,
                 "market_share": l.market_share,
             } for l in top3])
-            _plot(_bar_comparativo(df_t3, "Laboratório", "Comparativo Top 3 — faturamento"))
+            _plot(_bar_comparativo(
+                df_t3,
+                "Laboratório",
+                "Comparativo Top 3 — faturamento",
+                rotulo_base=per_base,
+                rotulo_atual=per_atual,
+            ))
             for l in top3:
                 seta = _seta((l.crescimento or 0) >= 0)
                 ms = f" · MS {fmt_ms(l.market_share)}" if l.market_share else ""
@@ -677,35 +882,51 @@ def main() -> None:
 
         if estudo.total_ntr and estudo.total_ntr.market_share:
             st.markdown(
-                f'<div class="insight-box">📊 <b>Danone NTR</b> representa '
+                f'<div class="insight-box">📊 <b>{cliente}</b> representa '
                 f'<b>{fmt_ms(estudo.total_ntr.market_share)}</b> do mercado mapeado no estudo.</div>',
                 unsafe_allow_html=True,
             )
 
-        if estudo.laboratorios_ranking:
-            df_ms = pd.DataFrame([{
-                "Laboratório": l.nome,
-                "market_share": l.market_share,
-                "fat_2026": l.fat_2026,
-                "crescimento": l.crescimento,
-            } for l in estudo.laboratorios_ranking if l.market_share])
-            top_ms = df_ms.nlargest(15, "market_share")
-            _plot(_grafico_market_share(top_ms, "Laboratório", "Top 15 — Market Share por laboratório"))
+        if estudo.laboratorios_ranking or estudo.produtos_ranking:
+            df_labs = _tabela_laboratorios_ms(estudo)
+            df_prods = _tabela_produtos_ms(estudo)
 
-            st.dataframe(
-                top_ms.sort_values("market_share", ascending=False).assign(
-                    **{
-                        "Market Share %": lambda d: d["market_share"].map(lambda v: fmt_ms(v)),
-                        "Faturamento Abr/26": lambda d: d["fat_2026"].map(lambda v: fmt_moeda(v, True)),
-                        "Crescimento YoY": lambda d: d["crescimento"].map(fmt_pct),
-                    }
-                )[["Laboratório", "Market Share %", "Faturamento Abr/26", "Crescimento YoY"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+            if not df_labs.empty:
+                st.markdown(
+                    '<div class="section-title" style="margin-top:0.5rem;">Laboratórios</div>',
+                    unsafe_allow_html=True,
+                )
+                top_labs = df_labs.nlargest(15, "Market Share %")
+                _plot(_grafico_market_share(
+                    top_labs.rename(columns={"Laboratório": "Laboratório", "Market Share %": "market_share"}),
+                    "Laboratório",
+                    "Top 15 — Market Share por laboratório",
+                ))
+                st.dataframe(
+                    _formatar_tabela_ms(df_labs.sort_values("Market Share %", ascending=False)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-        c1, c2 = st.columns(2)
-        with c1:
+            if not df_prods.empty:
+                st.markdown(
+                    '<div class="section-title">Produtos</div>',
+                    unsafe_allow_html=True,
+                )
+                top_prods = df_prods.nlargest(10, "Market Share %")
+                _plot(_grafico_market_share(
+                    top_prods.rename(columns={"Produto": "Produto", "Market Share %": "market_share"}),
+                    "Produto",
+                    "Top 10 — Market Share por produto",
+                ))
+                st.dataframe(
+                    _formatar_tabela_ms(df_prods.sort_values("Market Share %", ascending=False)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        cols_ms = st.columns(2 if estudo.bandeiras else 1)
+        with cols_ms[0]:
             st.markdown('<div class="section-title">Market Share por Região</div>', unsafe_allow_html=True)
             if estudo.regioes:
                 df_r = pd.DataFrame([{
@@ -713,14 +934,14 @@ def main() -> None:
                     "market_share": r.market_share,
                 } for r in estudo.regioes if r.market_share])
                 _plot(_grafico_market_share(df_r, "Região", "Participação regional"))
-        with c2:
-            st.markdown('<div class="section-title">Market Share — Top Bandeiras</div>', unsafe_allow_html=True)
-            if estudo.bandeiras:
+        if estudo.bandeiras and len(cols_ms) > 1:
+            with cols_ms[1]:
+                st.markdown('<div class="section-title">Market Share — Top Bandeiras</div>', unsafe_allow_html=True)
                 df_b = pd.DataFrame([{
                     "Bandeira": b.nome.title(),
                     "market_share": b.market_share,
                 } for b in estudo.bandeiras[:10] if b.market_share])
-                _plot(_grafico_market_share(df_b, "Bandeira", "ABRAFAD — share no canal"))
+                _plot(_grafico_market_share(df_b, "Bandeira", "Share no canal"))
 
     # ── REGIONAL ──
     elif pagina == "Regional":
@@ -735,7 +956,13 @@ def main() -> None:
             } for r in estudo.regioes])
             c1, c2 = st.columns(2)
             with c1:
-                _plot(_bar_comparativo(df_r, "Região", "Faturamento por região"))
+                _plot(_bar_comparativo(
+                    df_r,
+                    "Região",
+                    "Faturamento por região",
+                    rotulo_base=per_base,
+                    rotulo_atual=per_atual,
+                ))
             with c2:
                 df_r2 = df_r.sort_values("crescimento", ascending=True)
                 _plot(_grafico_crescimento_horizontal(df_r2, "Região", "Crescimento YoY por região"))
@@ -760,12 +987,14 @@ def main() -> None:
         prod = prod[prod["fat_2025"] > 0]
         prod["nome_curto"] = prod["Produto"].apply(fmt_produto_curto)
 
-        filtro_reg = st.multiselect(
-            "Filtrar por região",
-            sorted(estudo.dados_detalhe["Regiao"].dropna().unique()),
+        col_reg = "Regiao" if "Regiao" in estudo.dados_detalhe.columns else None
+        filtro_reg = (
+            st.multiselect("Filtrar por região", sorted(estudo.dados_detalhe[col_reg].dropna().unique()))
+            if col_reg
+            else []
         )
-        if filtro_reg:
-            base = estudo.dados_detalhe[estudo.dados_detalhe["Regiao"].isin(filtro_reg)]
+        if filtro_reg and col_reg:
+            base = estudo.dados_detalhe[estudo.dados_detalhe[col_reg].isin(filtro_reg)]
             prod = (
                 base.groupby("Produto", as_index=False)
                 .agg(fat_2025=("fat_2025", "sum"), fat_2026=("fat_2026", "sum"))
@@ -791,7 +1020,7 @@ def main() -> None:
             aplicar_layout(
                 fig,
                 altura=max(420, top_n * 38 + 120),
-                titulo=f"Top {top_n} produtos — faturamento Abr/26",
+                titulo=f"Top {top_n} produtos — faturamento {per_atual}",
                 legenda=False,
                 margem_esq=160,
                 margem_dir=40,
@@ -843,7 +1072,7 @@ def main() -> None:
         st.markdown('<div class="section-title">Panorama Competitivo</div>', unsafe_allow_html=True)
         if estudo.laboratorios_ranking:
             df_c = pd.DataFrame([{
-                "Laboratório": l.nome,
+                "Laboratório": l.nome.strip(),
                 "fat_2026": l.fat_2026,
                 "crescimento": l.crescimento,
                 "market_share": l.market_share,
@@ -867,7 +1096,7 @@ def main() -> None:
             aplicar_layout(
                 fig,
                 altura=max(520, len(df_c) * 34 + 100),
-                titulo="Top 15 laboratórios — faturamento Abr/26",
+                titulo=f"Top 15 laboratórios — faturamento {per_atual}",
                 legenda=False,
                 margem_esq=140,
                 margem_dir=70,
@@ -879,7 +1108,7 @@ def main() -> None:
             if not df_ms_c.empty:
                 st.markdown('<div class="section-title">Market Share — Laboratórios</div>', unsafe_allow_html=True)
                 _plot(_grafico_market_share(
-                    df_ms_c.rename(columns={"Laboratório": "Laboratório"}),
+                    df_ms_c,
                     "Laboratório",
                     "Share de mercado (Top 15)",
                 ))
@@ -895,24 +1124,24 @@ def main() -> None:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("#### 🟢 Destaques positivos")
-            for p in estudo.impactos_positivos[:5]:
-                delta = fmt_moeda(p.delta_abs, True) if p.delta_abs else ""
-                st.markdown(
-                    f'<div class="insight-box pos"><b>{fmt_produto_curto(p.nome)}</b><br>'
-                    f'{fmt_pct(p.crescimento)} · {fmt_moeda(p.fat_2025, True)} → {fmt_moeda(p.fat_2026, True)}'
-                    f'{" · Δ " + delta if delta else ""}</div>',
-                    unsafe_allow_html=True,
-                )
+            df_pos = pd.DataFrame([{
+                "Laboratório": inferir_laboratorio(p.nome),
+                "Produto": fmt_produto_curto(p.nome),
+                "Crescimento YoY": fmt_pct(p.crescimento),
+                "Faturamento Abr/26": fmt_moeda(p.fat_2026, True),
+            } for p in estudo.impactos_positivos[:5]])
+            if not df_pos.empty:
+                st.dataframe(df_pos, use_container_width=True, hide_index=True)
         with c2:
             st.markdown("#### 🟠 Pontos de alerta")
-            for p in estudo.impactos_negativos[:5]:
-                delta = fmt_moeda(abs(p.delta_abs), True) if p.delta_abs else ""
-                st.markdown(
-                    f'<div class="insight-box neg"><b>{fmt_produto_curto(p.nome)}</b><br>'
-                    f'{fmt_pct(p.crescimento)} · {fmt_moeda(p.fat_2025, True)} → {fmt_moeda(p.fat_2026, True)}'
-                    f'{" · Perda " + delta if delta else ""}</div>',
-                    unsafe_allow_html=True,
-                )
+            df_neg = pd.DataFrame([{
+                "Laboratório": inferir_laboratorio(p.nome),
+                "Produto": fmt_produto_curto(p.nome),
+                "Crescimento YoY": fmt_pct(p.crescimento),
+                "Faturamento Abr/26": fmt_moeda(p.fat_2026, True),
+            } for p in estudo.impactos_negativos[:5]])
+            if not df_neg.empty:
+                st.dataframe(df_neg, use_container_width=True, hide_index=True)
 
     # ── EXPLORADOR ──
     elif pagina == "Explorador":
@@ -944,18 +1173,30 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         df = estudo.dados_detalhe
-        cols_filtro = st.columns(4)
-        regioes = sorted(df["Regiao"].dropna().unique())
-        ufs = sorted(df["UF"].dropna().unique())
-        bandeiras = sorted(df["Bandeira"].dropna().unique())
+        filtros_disp = ["Regiao"]
+        if "UF" in df.columns:
+            filtros_disp.append("UF")
+        if "Bandeira" in df.columns:
+            filtros_disp.append("Bandeira")
+        cols_filtro = st.columns(len(filtros_disp) + 1)
 
-        with cols_filtro[0]:
-            f_reg = st.multiselect("Região", regioes)
-        with cols_filtro[1]:
-            f_uf = st.multiselect("UF", ufs)
-        with cols_filtro[2]:
-            f_band = st.multiselect("Bandeira", bandeiras)
-        with cols_filtro[3]:
+        f_reg: list = []
+        f_uf: list = []
+        f_band: list = []
+        col_idx = 0
+        if "Regiao" in df.columns:
+            with cols_filtro[col_idx]:
+                f_reg = st.multiselect("Região", sorted(df["Regiao"].dropna().unique()))
+            col_idx += 1
+        if "UF" in df.columns:
+            with cols_filtro[col_idx]:
+                f_uf = st.multiselect("UF", sorted(df["UF"].dropna().unique()))
+            col_idx += 1
+        if "Bandeira" in df.columns:
+            with cols_filtro[col_idx]:
+                f_band = st.multiselect("Bandeira", sorted(df["Bandeira"].dropna().unique()))
+            col_idx += 1
+        with cols_filtro[col_idx]:
             f_prod = st.text_input("Buscar produto")
 
         filtrado = df.copy()
@@ -968,16 +1209,21 @@ def main() -> None:
         if f_prod:
             filtrado = filtrado[filtrado["Produto"].str.contains(f_prod, case=False, na=False)]
 
+        group_cols = [c for c in ("Laboratorio", "Produto", "Regiao", "UF") if c in filtrado.columns]
         agg = (
-            filtrado.groupby(["Produto", "Regiao", "UF"], as_index=False)
+            filtrado.groupby(group_cols, as_index=False)
             .agg(fat_2025=("fat_2025", "sum"), fat_2026=("fat_2026", "sum"))
         )
         agg["crescimento"] = (agg["fat_2026"] - agg["fat_2025"]) / agg["fat_2025"]
+        rename_map = {"Laboratorio": "Laboratório", "Regiao": "Região"}
+        agg = agg.rename(columns={k: v for k, v in rename_map.items() if k in agg.columns})
 
         st.dataframe(
             agg.sort_values("fat_2026", ascending=False).head(200),
             use_container_width=True,
             column_config={
+                "Laboratório": st.column_config.TextColumn("Laboratório", width="medium"),
+                "Produto": st.column_config.TextColumn("Produto", width="large"),
                 "fat_2025": st.column_config.NumberColumn("Abr/25", format="R$ %.2f"),
                 "fat_2026": st.column_config.NumberColumn("Abr/26", format="R$ %.2f"),
                 "crescimento": st.column_config.NumberColumn("YoY", format="%.2%%"),

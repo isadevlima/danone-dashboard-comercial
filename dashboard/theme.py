@@ -17,6 +17,10 @@ html, body, [class*="css"] {
     max-width: 1400px;
 }
 
+[data-testid="column"] {
+    min-width: 0 !important;
+}
+
 .hero {
     background: linear-gradient(135deg, #1A2B4A 0%, #2E86AB 100%);
     border-radius: 16px;
